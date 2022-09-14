@@ -1,0 +1,156 @@
+Numerous shadertweaks see description
+3dmigoto: lumasharpen, slight bumpmap textures and tonemap
+
+- description
+
+Sherlock Holmes crime and punishment the critically acclaimed
+title that firmly established frogwares after a number of
+sherlock holmes games with different degrees of success.
+
+Basically this mod shifts the color palette, reduces
+the quite pronounced darkness gamma wise and adds a
+little sharpening in the mix and reduces a number of
+effects see screenshots for an impression.
+
+If you do not like specific tweaks please see 'further tweaking'
+for disabling specific shader tweaks.
+
+3dmigoto shader tweaks:
+- reduce fog exterior
+- remove fog interior
+- reduce toby vision (dog)
+- reduce detective reconstruct mode and detective highlight mode
+
+Note(s):
+The  package has a customized shader 'upscale.hlsl' which
+does some fullscreen tweaks as sharpening and color modification.
+
+- install
+
+Copy the contents of the zip file to the install folder of
+sherlock holmes crime and punishment, the folder which contains
+Sherlock.exe
+<drive>:\sherlock holmes crime and punishment\Binaries\Win32
+
+- optional install
+
+The following instructions are only needed
+if you do not like using unverified dll's you can:
+
+download 3dmigoto from:
+https://github.com/bo3b/3Dmigoto/releases
+download version 1.3.16 and place the following dlls in the install dir of
+sherlock holmes crime and punishment:
+d3d11.dll (32bits)
+d3dcompiler_46.dll
+then copy `d3dx.ini, ShaderCache and ShaderFixes from the zip file to the same dir aka folder.
+
+note: if you choose to use the d3dx.ini contained in the github package
+make sure to set (line 248):
+hunting=0
+the default setting is:
+hunting=1
+which sets 3dmigoto to a debug mode.
+
+- verify
+
+After running the game the folder ShaderFixes should
+gradually (scene and level dependent) contain the .bin versions:
+
+1a6bb8115893b4a6-ps_replace.bin
+9db3ace89e2cee81-ps_replace.bin
+a9f895da8b081296-vs_replace.bin
+b5e200b7942d2b58-ps_replace.bin
+c7ec1faa0ae6bde5-ps_replace.bin
+
+of
+
+1a6bb8115893b4a6-ps_replace.txt
+9db3ace89e2cee81-ps_replace.txt
+a9f895da8b081296-vs_replace.txt
+b5e200b7942d2b58-ps_replace.txt
+c7ec1faa0ae6bde5-ps_replace.txt
+
+This means that the file(s) .txt have been compiled by 3dmigoto (d3d11.dll)
+
+- tested
+
+Tested with file version 1.0.8767.0 of sherlock holmes crime and punishment
+on win 10 / nvidia 1050gtx ti
+See screenshot for settings game.
+
+- performance
+
+3dmigoto gpu usage 1080p@ ~60fps
+without - clock 1760 Mhz gpu usage ~75%
+with    - clock 1760 Mhz gpu usage ~75%
+no measurable difference on (1050gtx ti on win 7 / win 10)
+max gpu: 1772Mhz gpu usage 100%
+*) Game set to fast sync through nvidia inpsector
+
+- further tweaking
+
+If you like you can compare the modified shader, ShaderCache contains
+the original shader, to alter values.
+
+To disable specific tweaks open the shader from
+the folder 'shaderfixes' with a text editor example:
+8d01e16dc982b984-ps_replace.txt
+
+Has a remark on the top line:
+// reduce fx detective vision highlight mode
+
+So if you do not want that to happen
+remove the shader from the folder 'shaderfixes'
+
+b5e200b7942d2b58-ps_replace.TXT
+
+and if compiled remove:
+
+b5e200b7942d2b58-ps_replace.TXT
+
+then restart the game.
+
+All shaders <shadernumber>ps_replace.txt have
+a similar descriptive remark. (see shader list)
+
+- tips
+
+Create a shortcut (.lnk) with your file explorer and modify
+the properties to:
+"<drive>:\<exepath>\Sherlock.exe" -norc -nowrite -nodatabase -useallavailablecores -noforcefeedback -nosplash
+
+https://www.pcgamingwiki.com/wiki/Sherlock_Holmes:_Crimes_%26_Punishments
+
+- shader list
+
+---------- 1A6BB8115893B4A6-PS_REPLACE.TXT
+// reduce fog exterior
+
+---------- 9DB3ACE89E2CEE81-PS_REPLACE.TXT
+// reduce fx detective vision recontruct mode
+// ---- Created with 3Dmigoto v1.3.16 on Sat Aug 27 11:25:00 2022
+// 3Dmigoto declarations
+  // curved screen
+  r1.z = 4.0f; // keep around 5 or lower
+  r1.w = (r1.x * 0.04f) * r1.y; // reduce for a gradual curve def 0.2
+  // add some green
+
+---------- A9F895DA8B081296-VS_REPLACE.TXT
+// reduce fog exterior
+
+---------- B5E200B7942D2B58-PS_REPLACE.TXT
+// reduce fx detective vision highlight mode
+// ---- Created with 3Dmigoto v1.3.16 on Sat Aug 27 11:31:26 2022
+// 3Dmigoto declarations
+  // curved screen
+  r1.z = 4.0f; // keep around 5 or lower
+  r1.w = (r1.x * 0.04f) * r1.y; // reduce for a gradual curve def 0.2
+
+---------- C7EC1FAA0AE6BDE5-PS_REPLACE.TXT
+// reduce fx toby vision
+// ---- Created with 3Dmigoto v1.3.16 on Thu Sep 01 11:59:24 2022
+// 3Dmigoto declarations
+
+---------- SHADERLIST.TXT
+
