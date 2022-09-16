@@ -5,7 +5,8 @@ supported image types or extensions:\
 ## usage
 imageviewer.exe "path to file or folder"\
 imageviewer.exe "path to file or folder" fullscreen\
-if no file or path is specified the current dir will be scanned for an image
+if no file or path is specified the current dir will be scanned for an image\
+if the folder has subfolder(s) these will be scanned for images as well 
 ## requirements
 sdl (32bit)\
 https://github.com/libsdl-org/SDL/releases
