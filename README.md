@@ -1,7 +1,8 @@
-## placebo
+## imageviewer
 basic imageviewer written in freebasic and sdl\
 supported image types or extensions:\
-.bmp, .gif, .jpg, .png, .pcx, .jpeg, .tff
+.bmp, .gif, .jpg, .png, .pcx, .jpeg, .tff\
+32bit version tested
 ## usage
 imageviewer.exe "path to file or folder"\
 imageviewer.exe "path to file or folder" fullscreen\
