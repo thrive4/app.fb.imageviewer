@@ -1,0 +1,27 @@
+09-12-2022 - 14:01:03|notice|imageviewer|F:\dev\freebasic\projects\imageviewer\imageviewer.log created
+09-12-2022 - 19:36:42|error|imageviewer|reading f:\dev\freebasic\projects\imageviewer\imageviewer.tmp file does not excist
+09-12-2022 - 19:36:42|error|imageviewer|reading f:\dev\freebasic\projects\imageviewer\imageviewer.lst file does not excist
+09-12-2022 - 19:36:42|error|imageviewer|deleteing f:\dev\freebasic\projects\imageviewer\imageviewer.lst
+09-12-2022 - 19:36:42|error|imageviewer|reading f:\dev\freebasic\projects\imageviewer\imageviewer.tmp file does not excist
+09-12-2022 - 19:42:32|error|imageviewer|reading f:\dev\freebasic\projects\imageviewer\imageviewer.tmp file does not excist
+09-12-2022 - 19:42:32|error|imageviewer|reading f:\dev\freebasic\projects\imageviewer\imageviewer.lst file does not excist
+09-12-2022 - 19:42:32|error|imageviewer|deleteing f:\dev\freebasic\projects\imageviewer\imageviewer.lst
+09-12-2022 - 19:42:32|error|imageviewer|reading f:\dev\freebasic\projects\imageviewer\imageviewer.tmp file does not excist
+09-12-2022 - 19:42:41|error|imageviewer|reading f:\dev\freebasic\projects\imageviewer\imageviewer.tmp file does not excist
+09-12-2022 - 19:42:41|error|imageviewer|reading f:\dev\freebasic\projects\imageviewer\imageviewer.tmp file does not excist
+09-12-2022 - 19:56:13|warning|imageviewer|file format not found - F:\dev\freebasic\projects\imageviewer\imageviewer.bas
+09-12-2022 - 19:56:13|warning|imageviewer|file format not found - F:\dev\freebasic\projects\imageviewer\imageviewer.exe
+09-12-2022 - 19:56:13|warning|imageviewer|file format not found - F:\dev\freebasic\projects\imageviewer\imageviewer.log
+09-12-2022 - 19:56:13|warning|imageviewer|file format not found - F:\dev\freebasic\projects\imageviewer\imageviewer.tmp
+09-12-2022 - 19:56:13|warning|imageviewer|file format not found - F:\dev\freebasic\projects\imageviewer\SDL2.dll
+09-12-2022 - 19:56:13|warning|imageviewer|file format not found - F:\dev\freebasic\projects\imageviewer\SDL2_image.dll
+09-12-2022 - 19:56:13|warning|imageviewer|file format not found - F:\dev\freebasic\projects\imageviewer\shuffleplay.bas
+09-12-2022 - 19:56:13|warning|imageviewer|file format not found - F:\dev\freebasic\projects\imageviewer\shuffleplay.bas.o
+09-12-2022 - 19:56:13|warning|imageviewer|file format not found - F:\dev\freebasic\projects\imageviewer\utilfile.bas
+09-12-2022 - 19:56:13|warning|imageviewer|file format not found - F:\dev\freebasic\projects\imageviewer\utilfile.bas.o
+09-12-2022 - 19:56:13|notice|imageviewer|F:\dev\freebasic\projects\imageviewer\imageviewer.lst created
+09-12-2022 - 19:56:18|warning|imageviewer|path g:\data\images\flickr\paris not found
+09-12-2022 - 19:57:43|error|imageviewer|reading f:\dev\freebasic\projects\imageviewer\imageviewer.tmp file does not excist
+09-12-2022 - 19:57:43|error|imageviewer|reading f:\dev\freebasic\projects\imageviewer\imageviewer.lst file does not excist
+09-12-2022 - 19:57:43|error|imageviewer|deleteing f:\dev\freebasic\projects\imageviewer\imageviewer.lst
+09-12-2022 - 19:57:43|error|imageviewer|reading f:\dev\freebasic\projects\imageviewer\imageviewer.tmp file does not excist
