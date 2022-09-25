@@ -6,7 +6,7 @@
 
 #include once "SDL2/SDL.bi"
 #include once "SDL2/SDL_image.bi"
-' dir dunction and provides constants to use for the attrib_mask parameter
+' dir function and provides constants to use for the attrib_mask parameter
 #include once "vbcompat.bi"
 #include once "dir.bi"
 #include once "utilfile.bas"
@@ -109,7 +109,8 @@ else
         imagefolder = command(1)
         if checkpath(imagefolder) = false then
             print "error: path not found " + imagefolder
-            end
+            sleep
+            goto cleanup
         else
             chk = createlist(imagefolder, imagetypes, "image")
             filename = listplay(playtype, "image")
@@ -120,7 +121,8 @@ else
         filename = listplay(playtype, "image")
         if chk = 0 then
             PRINT "error: no displayable files found"
-            end
+            sleep
+            goto cleanup
         end if
     end if
 end if    
@@ -333,6 +335,7 @@ while running
     SDL_Delay(30)
 wend
 
+cleanup:
 ' cleanup listplay files
 delfile(exepath + "\" + "image" + ".tmp")
 delfile(exepath + "\" + "image" + ".lst")
