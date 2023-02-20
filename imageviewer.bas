@@ -36,7 +36,7 @@ dim as double tLast=tStart
 ' setup list of images for background
 dim filename as string
 dim imagefolder as string
-dim imagetypes as string = ".bmp, .gif, .jpg, .png, .pcx, .jpeg, .tff" 
+dim imagetypes as string = ".bmp, .gif, .jpg, .png, .pcx, .jpeg, .tff, .webp" 
 dim playtype as string = "linear"
 
 ' define specific area for overlay
@@ -68,24 +68,70 @@ Dim oposy as integer = imposy
 Dim oscaledw as integer = scaledw
 Dim oscaledh as integer = scaledh
 
-sub displayhelp
-        print ""
-        print "> command line options <"
-        print "file or path : imageviewer.exe g:\data\images\paris"
-        print "if no file or path is specified the current dir will be scanned for an image"
-        print "fullscreen   : set display to fullscreen"
-        print "example      : imageviewer.exe g:\data\images\paris fullscreen"
-        print ""
-        print "> navigation <"
-        print "arrow left :  back"
-        print "arrow right:  forward"
-        print "f11        :  toggle fullscreen"
-        print "num plus   :  zoom in"
-        print "num min    :  zoom out"
-        print "num .      :  reset zoom"
-        print "r          :  rotate image"
-        print "esc        :  close application"
-end sub
+' get version exe for log
+dim as integer c,res
+dim as string tfn
+dim as string versinfo(8)
+dim as string versdesc(7) =>_
+    {"CompanyName",_
+    "FileDescription",_
+    "FileVersion",_
+    "InternalName",_
+    "LegalCopyright",_
+    "OriginalFilename",_
+    "ProductName",_
+    "ProductVersion"}
+
+tfn = appname + ".exe"
+versinfo(8) = tfn
+res = getfileversion(versinfo(),versdesc())
+exeversion = "v" + replace(trim(versinfo(2)), ", ", ".")
+
+
+' navigation default values
+dim kback as integer
+' init app with config file if present conf.ini
+dim itm as string
+dim inikey as string
+dim inival as string
+dim inifile as string = exepath + "\conf.ini"
+dim f as integer
+if FileExists(inifile) = false then
+    logentry("error", inifile + "file does not excist")
+else 
+    f = readfromfile(inifile)
+    Do Until EOF(f)
+        Line Input #f, itm
+        if instr(1, itm, "=") > 1 then
+            inikey = trim(mid(itm, 1, instr(1, itm, "=") - 2))
+            inival = trim(mid(itm, instr(1, itm, "=") + 2, len(itm)))
+            if inival <> "" then
+                select case inikey
+                    case "screenwidth"
+                        screenwidth = val(inival)
+                    case "screenheight"
+                        screenheight = val(inival)
+                    case "fullscreen"
+                        fullscreen = cbool(inival)
+                        if fullscreen then
+                            screenwidth  = desktopw
+                            screenheight = desktoph
+                            fullscreen = true
+                        end if
+                    case "locale"
+                        locale = inival
+                    case "usecons"
+                        usecons = inival
+                    case "logtype"
+                        logtype = inival
+                    case "kback"
+                end select
+            end if
+            'print inikey + " - " + inival
+        end if    
+    loop
+    close(f)    
+end if    
 
 select case command(2)
     case "/?", "-man", ""
@@ -128,7 +174,6 @@ else
 end if    
 
 initsdl:
-Screen 0, , , &h80000000
 ' init window and render
 If (SDL_Init(SDL_INIT_VIDEO) = not NULL) Then 
     logentry("error", "sdl2 video could not be initlized error: " + *SDL_GetError())
@@ -158,6 +203,29 @@ if (renderer = NULL) Then
     logentry("error", "sdl2 could not create renderer")
 	SDL_Quit()
 EndIf
+
+' gamepad
+dim deadzone as integer = 8192
+Dim As SDL_GameController Ptr controller = NULL
+If (SDL_Init(SDL_INIT_GAMECONTROLLER) = not NULL) Then 
+    logentry("error", "sdl2 gamecontroller could not be initlized error: " + *SDL_GetError())
+End If
+controller = SDL_GameControllerOpen(0)
+If (controller = NULL) Then
+    logentry("error", "unable to open gamepad - sdl error: " & *SDL_GetError())
+else
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "0")
+    logentry("notice", "gamepad detected " & *SDL_GameControllerName(controller))
+end if
+
+' possible fix for unrecognized gamepad https://github.com/gabomdq/SDL_GameControllerDB
+'SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt")
+Dim As ZString Ptr map = SDL_GameControllerMapping(controller)
+
+' gamepad map debug
+'Print *SDL_GameControllerName(controller)
+'print *map
+'sleep 3000
 
 ' load texture
 Dim As SDL_Texture Ptr background_surface
@@ -215,6 +283,10 @@ end function
 while running
     dim as double tNow=Timer()    
     while SDL_PollEvent(@event) <> 0
+        ' filter non used events
+        SDL_EventState(SDL_FINGERMOTION,    SDL_IGNORE)
+        SDL_EventState(SDL_MULTIGESTURE,    SDL_IGNORE)
+        SDL_EventState(SDL_DOLLARGESTURE,   SDL_IGNORE)
         ' basic interaction
         select case event.type
             case SDL_KEYDOWN and event.key.keysym.sym = SDLK_ESCAPE
@@ -245,6 +317,15 @@ while running
                 zoomtype = "zoomout"
             CASE SDL_KEYDOWN and event.key.keysym.sym = SDLK_KP_PERIOD
                 zoomtype = "zoomsmallimage"
+            CASE SDL_KEYDOWN and event.key.keysym.sym = SDLK_Z
+                select case zoomtype
+                    case "scaled"
+                        zoomtype = "zoomsmallimage"
+                    case "zoomsmallimage"
+                        zoomtype = "stretch"
+                    case "stretch"
+                        zoomtype = "scaled"
+                end select
             CASE SDL_KEYDOWN and event.key.keysym.sym = SDLK_LEFT
                 ' get previous image in folder if avaiable
                 filename = listplay("linearmin", "image")
@@ -252,6 +333,7 @@ while running
                 background_surface = IMG_LoadTexture(renderer, filename)
                 ' reset rotation
                 rotateangle = 0
+                zoomtype = "zoomsmallimage"
             CASE SDL_KEYDOWN and event.key.keysym.sym = SDLK_RIGHT
                 ' get next image in folder if avaiable
                 filename = listplay(playtype, "image")
@@ -259,18 +341,111 @@ while running
                 background_surface = IMG_LoadTexture(renderer, filename)
                 ' reset rotation
                 rotateangle = 0
+                zoomtype = "zoomsmallimage"
             ' rotate clockwise
             case SDL_KEYDOWN and event.key.keysym.sym = SDLK_R
-                 if rotateangle > -270 then
-                    rotateangle = rotateangle - 90
-                 else
-                     rotateangle = 0
-                 end if       
-            ' restore rotate
-            'if event.type = SDL_KEYDOWN and event.key.keysym.sym = SDLK_DOWN then
-            '     rotateimage = SDL_FLIP_NONE
-            '     rotateangle = 0
-            'end if
+                if rotateangle > -270 then
+                rotateangle = rotateangle - 90
+                else
+                 rotateangle = 0
+                end if
+            ' navigation mouse
+            case SDL_MOUSEWHEEL
+                'scroll up
+                if event.wheel.y > 0 then
+                    zoomtype = "zoomin"
+                'scroll down
+                elseif event.wheel.y < 0 then
+                    zoomtype = "zoomout"
+                end if
+                'scroll right
+                if event.wheel.x > 0 then
+                    'nop
+                ' scroll left
+                elseif event.wheel.x < 0 then
+                    'nop
+                end if
+            case SDL_MOUSEBUTTONDOWN
+                ' button
+                select case event.button.button
+                    case SDL_BUTTON_LEFT
+                        ' get next image in folder if avaiable
+                        filename = listplay(playtype, "image")
+                        SDL_DestroyTexture(background_surface)
+                        background_surface = IMG_LoadTexture(renderer, filename)
+                        ' reset rotation
+                        rotateangle = 0
+                        zoomtype = "zoomsmallimage"
+                    case SDL_BUTTON_MIDDLE
+                        zoomtype = "zoomsmallimage"
+                    case SDL_BUTTON_RIGHT
+                        ' get previous image in folder if avaiable
+                        filename = listplay("linearmin", "image")
+                        SDL_DestroyTexture(background_surface)
+                        background_surface = IMG_LoadTexture(renderer, filename)
+                        ' reset rotation
+                        rotateangle = 0
+                        zoomtype = "zoomsmallimage"
+                end select
+            case SDL_MOUSEBUTTONUP
+                'nop
+            ' navigation gamepad dpad and A button
+            case SDL_CONTROLLERBUTTONUP
+                select case event.cbutton.button    
+                    case SDL_CONTROLLER_BUTTON_DPAD_LEFT
+                        ' get previous image in folder if avaiable
+                        filename = listplay("linearmin", "image")
+                        SDL_DestroyTexture(background_surface)
+                        background_surface = IMG_LoadTexture(renderer, filename)
+                        ' reset rotation
+                        rotateangle = 0
+                        zoomtype = "zoomsmallimage"
+                    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT
+                        ' get next image in folder if avaiable
+                        filename = listplay(playtype, "image")
+                        SDL_DestroyTexture(background_surface)
+                        background_surface = IMG_LoadTexture(renderer, filename)
+                        ' reset rotation
+                        rotateangle = 0
+                        zoomtype = "zoomsmallimage"
+                    case SDL_CONTROLLER_BUTTON_DPAD_DOWN
+                        zoomtype = "zoomout"
+                    case SDL_CONTROLLER_BUTTON_DPAD_UP
+                        zoomtype = "zoomin"
+                    case SDL_CONTROLLER_BUTTON_A
+                        zoomtype = "zoomsmallimage"
+                    case SDL_CONTROLLER_BUTTON_B
+                        if rotateangle > -270 then
+                            rotateangle = rotateangle - 90
+                        else
+                            rotateangle = 0
+                        end if
+                    case SDL_CONTROLLER_BUTTON_Y
+                        select case zoomtype
+                            case "scaled"
+                                zoomtype = "zoomsmallimage"
+                            case "zoomsmallimage"
+                                zoomtype = "stretch"
+                            case "stretch"
+                                zoomtype = "scaled"
+                        end select
+                end select
+            case SDL_CONTROLLERAXISMOTION
+                if event.caxis.value > deadzone or event.caxis.value < -deadzone then
+                '    axisinput(event.caxis.axis, event.caxis.value, mousespeed)
+                    select case event.caxis.axis
+                        case SDL_CONTROLLER_AXIS_TRIGGERRIGHT
+                            zoomtype = "zoomin"
+                        case SDL_CONTROLLER_AXIS_TRIGGERLEFT
+                            zoomtype = "zoomout"
+                    end select
+                end if
+            case SDL_CONTROLLERDEVICEADDED
+                SDL_free(map)
+                SDL_GameControllerClose(controller)
+                controller = SDL_GameControllerOpen(0)
+                logentry("notice", "switched to game controller: " & *SDL_GameControllerName(controller))
+                map = SDL_GameControllerMapping(controller)
         end select
     wend
 
@@ -280,10 +455,10 @@ while running
         ' scale image
         case "scaled"
             chk = scaledfit(screenwidth, screenheight, iW, iH, scaledw, scaledh, imagex, imagey)
-            imposx = imagex
-            imposy = imagey
-            scaledw = scaledw
-            scaledh = scaledh
+            imposx = (screenwidth * 0.5f) - iW * 0.5
+            imposy = (screenheight * 0.5f) - iH * 0.5
+            scaledw = iW
+            scaledh = iH
         case "zoomsmallimage"
             scale = resizebyaspectratio(screenwidth, screenheight, iW, iH)
             imposx = (screenwidth * 0.5f) - abs(scale * iW) * 0.5
@@ -328,7 +503,7 @@ while running
             fps = 60 / (tNow-tLast)
             tLast=tNow
         end if    
-        SDL_SetWindowTitle(glass, "imageviewer - " + filename + " - " & fps & " fps / refresh monitor = " & desktopr )
+        SDL_SetWindowTitle(glass, "imageviewer - " + filename + " - " & fps & " fps")' / refresh monitor = " & desktopr)
     end if
 
     ' decrease cpu usage
@@ -348,4 +523,4 @@ IMG_Quit()
 SDL_Quit()
 close
 
-end
+logentry("terminate", "normal termination " + appname)

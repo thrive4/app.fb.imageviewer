@@ -27,7 +27,7 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "Comments", "needs sdl and sdl_image libs"
-            VALUE "CompanyName", ""
+            VALUE "CompanyName", "thrive4"
             VALUE "FileDescription", "imageviewer"
             VALUE "FileVersion", "1, 0, 0, 000"
             VALUE "InternalName", ""

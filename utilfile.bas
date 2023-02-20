@@ -10,7 +10,8 @@ dim shared logtype as string
 dim shared appname as string
 dim shared appfile as string
 dim shared usecons as string
-dim shared WindowText As String
+dim shared exeversion as string
+dim shared locale as string
 
 ' note command(0) can arbitraly add the path so strip it
 appname = mid(command(0), instrrev(command(0), "\") + 1)
@@ -42,23 +43,53 @@ Function logentry(entrytype As String, logmsg As String) As Boolean
     logfile = exepath + "\" + appname + ".log"
     if FileExists(logfile) = false then
         Open logfile For output As #f
-        logmsg = logfile + " created"
-        print #f, date + " - " + time + "|" + "notice" + "|" + appname + "|" + logmsg
+        logmsg = exeversion + " " + logfile + " created"
+        print #f, format(now, "dd/mm/yyyy") + " - " + time + "|" + "notice" + "|" + appname + "|" + logmsg
         close #f
         exit function
     end if
 
-    if entrytype <> "error" and logtype = "verbose" then
+    if entrytype <> "error" and entrytype <> "terminate" and logtype = "verbose" then
         exit function
     end if
 
     ' write to logfile
     Open logfile For append As #f
-    print #f, date + " - " + time + "|" + entrytype + "|" + appname + "|" + logmsg
+    print #f, format(now, "dd/mm/yyyy") + " - " + time + "|" + entrytype + "|" + appname + "|" + logmsg
     close #f
+
+    ' normal termination or fatal error
+    if entrytype = "terminate" then
+        end
+    end if
 
     return true
 End function
+
+' localiztion can be applied by getting a locale or other method
+sub displayhelp
+    dim dummy as string
+    dim f as integer
+    f = freefile
+    
+    ' get / set locale
+    select case locale
+        case "de"
+            locale = "de"
+        case "en"
+        ' default locale
+        case else
+            locale = "en"
+    end select    
+    ' get text
+    Open exepath + "\help-" + locale + ".ini" For input As #f
+    Do Until EOF(f)
+        Line Input #f, dummy
+        print dummy    
+    Loop
+    close f
+
+end sub
 
 ' list files in folder
 function getfilesfromfolder (filespec As String) as boolean
@@ -173,3 +204,97 @@ Function checkpath(chkpath As String) As boolean
     return true
 
 End Function
+
+' get fileversion executable or dll
+function getfileversion(versinfo() as string, versdesc() as string) as integer
+
+    dim as integer bytesread,c,dwHandle,res,verSize
+    dim as string buffer,ls,qs,tfn
+    dim as ushort ptr b1,b2
+    dim as ubyte ptr bptr
+
+    tfn=versinfo(8)
+    if dir(tfn)="" then return -1
+    verSize=GetFileVersionInfoSize(tfn,@dwHandle)
+    if verSize=0 then return -2
+    dim as any ptr verdat=callocate(verSize*2)
+
+    res=GetFileVersionInfo(strptr(tfn),dwHandle,verSize*2,verdat)
+    res=_
+        VerQueryValue(_
+            verdat,_
+            "\VarFileInfo\Translation",_
+            @bptr,_
+            @bytesread)
+
+    if bytesread=0 then deallocate(verdat):return -3
+
+    b1=cast(ushort ptr,bptr)
+    b2=cast(ushort ptr,bptr+2)
+    ls=hex(*b1,4)& hex(*b2,4)
+
+    for c=0 to 7
+        qs="\StringFileInfo\" & ls & "\" & versdesc(c)
+        res=_
+            VerQueryValue(_
+                verdat,_
+                strptr(qs),_
+                @bptr,_
+                @bytesread)
+        if bytesread>0 then
+            buffer=space(bytesread)
+            CopyMemory(strptr(buffer),bptr,bytesread)
+            versinfo(c)=buffer
+        else
+            versinfo(c)="N/A"
+        end if
+    next c
+    deallocate(verdat)
+
+    return 1
+
+end function
+
+' split or explode by delimiter return elements in array
+' based on https://www.freebasic.net/forum/viewtopic.php?t=31691 code by grindstone
+Function explode(haystack As String = "", delimiter as string, ordinance() As String) As UInteger
+    Dim As String text = haystack  'remind explode as working copy
+    Dim As UInteger b = 1, e = 1   'pointer to text, begin and end
+    Dim As UInteger x              'counter
+    ReDim ordinance(0)             'reset array
+
+    Do Until e = 0
+      x += 1
+      ReDim Preserve ordinance(x)         'create new array element
+      e = InStr(e + 1, text, delimiter)   'set end pointer to next space
+      ordinance(x) = Mid(text, b, e - b)  'cut text between the pointers and write it to the array
+      b = e + 1                           'set begin pointer behind end pointer for the next word
+    Loop
+
+    Return x 'nr of elements returned
+
+    ' sample code for calling the function explode
+    'ReDim As String ordinance(0)
+    'explode("The big brown fox jumped over; the lazy; dog", ";", ordinance())
+    'print UBound(ordinance)
+    'For x As Integer = 1 To UBound(ordinance)
+    '    Print ordinance(x)
+    'Next
+
+End Function
+
+' text substitution
+function replace(byref haystack as string, byref needle as string, byref substitute as string) as string
+'found at https://freebasic.net/forum/viewtopic.php?f=2&t=9971&p=86259&hilit=replace+character+in+string#p86259
+    dim as string temphaystack = haystack
+    dim as integer fndlen = len(needle), replen = len(substitute)
+    dim as integer i = instr(temphaystack, needle)
+
+    while i
+        temphaystack = left(temphaystack, i - 1) & substitute & mid(temphaystack, i + fndlen)
+        i = instr(i + replen, temphaystack, needle)
+    wend
+
+    return temphaystack
+
+end function
