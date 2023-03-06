@@ -2,7 +2,7 @@
 ' Translated to FreeBASIC by Michael "h4tt3n" Schmidt Nissen, march 2017
 ' http://www.willusher.io/sdl2%20tutorials/2013/08/18/lesson-3-sdl-extension-libraries
 ' tweaked for fb and sdl2 sept 2022 by thrive4
-' supported image format bmp, gif, jpeg, jpg, lbm, pcx, png, pnm, svg, tga, tiff, tff, webp, xcf, xpm, xv
+' supported image formats .bmp, .gif, .jpg, .mp3, .png, .pcx, .jpeg, .tff, .webp
 
 #include once "SDL2/SDL.bi"
 #include once "SDL2/SDL_image.bi"
@@ -11,20 +11,22 @@
 #include once "dir.bi"
 #include once "utilfile.bas"
 #include once "shuffleplay.bas"
+#cmdline "app.rc"
 
-dim event as SDL_Event
-dim running as boolean = True
-dim screenwidth As integer   = 1280
-dim screenheight As integer  = 720
-dim fullscreen as boolean = false
-dim desktopw as integer
-dim desktoph as integer
-dim desktopr as integer
-dim rotateimage as SDL_RendererFlip = SDL_FLIP_NONE
-dim rotateangle as double = 0
+dim event           as SDL_Event
+dim running         as boolean = True
+dim screenwidth     As integer   = 1280
+dim screenheight    As integer  = 720
+dim fullscreen      as boolean = false
+dim desktopw        as integer
+dim desktoph        as integer
+dim desktopr        as integer
+dim rotateimage     as SDL_RendererFlip = SDL_FLIP_NONE
+dim rotateangle     as double = 0
 'zoomtype options stretch, scaled, zoomsmallimage
-dim zoomtype as string = "zoomsmallimage"
-dim dummy as string
+dim zoomtype        as string = "zoomsmallimage"
+dim dummy           as string
+dim mp3chk          as boolean
 ' get desktop info
 ScreenInfo desktopw, desktoph,,,desktopr
 
@@ -34,10 +36,10 @@ dim as double tStart = Timer()
 dim as double tLast=tStart
 
 ' setup list of images for background
-dim filename as string
+dim filename    as string
 dim imagefolder as string
-dim imagetypes as string = ".bmp, .gif, .jpg, .png, .pcx, .jpeg, .tff, .webp" 
-dim playtype as string = "linear"
+dim imagetypes  as string = ".bmp, .gif, .jpg, .mp3, .png, .pcx, .jpeg, .tff" 
+dim playtype    as string = "linear"
 
 ' define specific area for overlay
 dim srcrect as SDL_Rect
@@ -47,53 +49,33 @@ srcrect.w = 32
 srcrect.h = 32
 
 ' main area for rendering
-dim mrect as SDL_Rect
+dim mrect  as SDL_Rect
 dim center as SDL_Point
 
 ' init zoom
-dim imagex as integer
-dim imagey as integer
-dim imposx as single
-dim imposy as single
+dim imagex  as integer
+dim imagey  as integer
+dim imposx  as single
+dim imposy  as single
 dim scaledw as single
 dim scaledh as single
-dim scale as single
+dim scale   as single
 
 ' scaling image
 Dim As Integer iW, iH
 
 ' restore size no zoom
-Dim oposx as integer = imposx
-Dim oposy as integer = imposy
+Dim oposx    as integer = imposx
+Dim oposy    as integer = imposy
 Dim oscaledw as integer = scaledw
 Dim oscaledh as integer = scaledh
-
-' get version exe for log
-dim as integer c,res
-dim as string tfn
-dim as string versinfo(8)
-dim as string versdesc(7) =>_
-    {"CompanyName",_
-    "FileDescription",_
-    "FileVersion",_
-    "InternalName",_
-    "LegalCopyright",_
-    "OriginalFilename",_
-    "ProductName",_
-    "ProductVersion"}
-
-tfn = appname + ".exe"
-versinfo(8) = tfn
-res = getfileversion(versinfo(),versdesc())
-exeversion = "v" + replace(trim(versinfo(2)), ", ", ".")
-
 
 ' navigation default values
 dim kback as integer
 ' init app with config file if present conf.ini
-dim itm as string
-dim inikey as string
-dim inival as string
+dim itm     as string
+dim inikey  as string
+dim inival  as string
 dim inifile as string = exepath + "\conf.ini"
 dim f as integer
 if FileExists(inifile) = false then
@@ -155,7 +137,6 @@ else
         imagefolder = command(1)
         if checkpath(imagefolder) = false then
             print "error: path not found " + imagefolder
-            sleep
             goto cleanup
         else
             chk = createlist(imagefolder, imagetypes, "image")
@@ -165,18 +146,39 @@ else
         imagefolder = exepath
         chk = createlist(imagefolder, imagetypes, "image")
         filename = listplay(playtype, "image")
-        if chk = 0 then
-            PRINT "error: no displayable files found"
-            sleep
+        if chk = false then
+            PRINT "notice: no displayable files found"
             goto cleanup
         end if
     end if
 end if    
 
+' check and get mp3 cover art
+sub checkmp3cover(byref filename as string, byref dummy as string, byref mp3chk as boolean)
+    if instr(filename, ".mp3") > 0 then
+        dummy = filename
+        filename = getmp3cover(filename)
+        mp3chk = true
+    else
+        mp3chk = false
+    end if
+end sub
+
+' get next or previous image
+sub getimage(byref filename as string, byref dummy as string, byref mp3chk as boolean, byval playtype as string)
+    filename = listplay(playtype, "image")
+    checkmp3cover(filename, dummy, mp3chk)
+    ' validate if false get next image
+    if filename = "" or FileExists(filename) = false then
+        filename = listplay(playtype, "image")
+        checkmp3cover(filename, dummy, mp3chk)
+    end if
+end sub
+
 initsdl:
 ' init window and render
 If (SDL_Init(SDL_INIT_VIDEO) = not NULL) Then 
-    logentry("error", "sdl2 video could not be initlized error: " + *SDL_GetError())
+    logentry("terminate", "sdl2 video could not be initlized error: " + *SDL_GetError())
     SDL_Quit()
 else
     ' no audio needed
@@ -194,13 +196,13 @@ else
     glass = SDL_CreateWindow( "imageviewer", 100, 100, screenwidth, screenheight, SDL_WINDOW_RESIZABLE)
 end if
 if (glass = NULL) Then
-    logentry("error", "sdl2 could not create window")
+    logentry("terminate", "abnormal termination sdl2 could not create window")
 	SDL_Quit()
 EndIf
 Dim As SDL_Renderer Ptr renderer = SDL_CreateRenderer(glass, -1, SDL_RENDERER_ACCELERATED Or SDL_RENDERER_PRESENTVSYNC)
 'SDL_SetWindowOpacity(glass, 0.5)
 if (renderer = NULL) Then	
-    logentry("error", "sdl2 could not create renderer")
+    logentry("terminate", "abnormal termination sdl2 could not create renderer")
 	SDL_Quit()
 EndIf
 
@@ -229,12 +231,13 @@ Dim As ZString Ptr map = SDL_GameControllerMapping(controller)
 
 ' load texture
 Dim As SDL_Texture Ptr background_surface
+checkmp3cover(filename, dummy, mp3chk)
+SDL_DestroyTexture(background_surface)
 background_surface = IMG_LoadTexture(renderer, filename)
-
 ' verify load image
 if ( background_surface = NULL ) Then
 	'cleanup(background, image, renderer, window)
-    logentry("error", "sdl2 could not create texture")
+    logentry("terminate", "abnormal termination sdl2 could not create texture")
 	IMG_Quit()
 	SDL_Quit()
 EndIf
@@ -280,6 +283,7 @@ function scaledfit(screenw as integer, screenh as integer,_
     return true
 end function
 
+' main
 while running
     dim as double tNow=Timer()    
     while SDL_PollEvent(@event) <> 0
@@ -303,11 +307,17 @@ while running
                         screenwidth  = 1280
                         screenheight = 720
                         fullscreen = false
+                        ' reset rotation and zoomtype
+                        rotateangle = 0
+                        zoomtype = "zoomsmallimage"
                         goto initsdl
                     case false
                         screenwidth  = desktopw
                         screenheight = desktoph
                         fullscreen = true
+                        ' reset rotation and zoomtype
+                        rotateangle = 0
+                        zoomtype = "zoomsmallimage"
                         goto initsdl
                 end select
             ' zoom manual
@@ -326,24 +336,28 @@ while running
                     case "stretch"
                         zoomtype = "scaled"
                 end select
+            CASE SDL_KEYDOWN and event.key.keysym.sym = SDLK_SPACE
+                ' reset rotation and zoomtype
+                rotateangle = 0
+                zoomtype = "zoomsmallimage"
             CASE SDL_KEYDOWN and event.key.keysym.sym = SDLK_LEFT
                 ' get previous image in folder if avaiable
-                filename = listplay("linearmin", "image")
+                getimage(filename, dummy, mp3chk, "linearmin")
                 SDL_DestroyTexture(background_surface)
                 background_surface = IMG_LoadTexture(renderer, filename)
-                ' reset rotation
+                ' reset rotation and zoomtype
                 rotateangle = 0
                 zoomtype = "zoomsmallimage"
             CASE SDL_KEYDOWN and event.key.keysym.sym = SDLK_RIGHT
                 ' get next image in folder if avaiable
-                filename = listplay(playtype, "image")
+                getimage(filename, dummy, mp3chk, playtype)
                 SDL_DestroyTexture(background_surface)
                 background_surface = IMG_LoadTexture(renderer, filename)
                 ' reset rotation
                 rotateangle = 0
                 zoomtype = "zoomsmallimage"
             ' rotate clockwise
-            case SDL_KEYDOWN and event.key.keysym.sym = SDLK_R
+            case SDL_KEYDOWN and (event.key.keysym.sym = SDLK_R or event.key.keysym.sym = SDLK_RETURN)
                 if rotateangle > -270 then
                 rotateangle = rotateangle - 90
                 else
@@ -370,17 +384,18 @@ while running
                 select case event.button.button
                     case SDL_BUTTON_LEFT
                         ' get next image in folder if avaiable
-                        filename = listplay(playtype, "image")
+                        getimage(filename, dummy, mp3chk, playtype)
                         SDL_DestroyTexture(background_surface)
                         background_surface = IMG_LoadTexture(renderer, filename)
                         ' reset rotation
                         rotateangle = 0
                         zoomtype = "zoomsmallimage"
                     case SDL_BUTTON_MIDDLE
+                        rotateangle = 0
                         zoomtype = "zoomsmallimage"
                     case SDL_BUTTON_RIGHT
                         ' get previous image in folder if avaiable
-                        filename = listplay("linearmin", "image")
+                        getimage(filename, dummy, mp3chk, "linearmin")
                         SDL_DestroyTexture(background_surface)
                         background_surface = IMG_LoadTexture(renderer, filename)
                         ' reset rotation
@@ -394,7 +409,7 @@ while running
                 select case event.cbutton.button    
                     case SDL_CONTROLLER_BUTTON_DPAD_LEFT
                         ' get previous image in folder if avaiable
-                        filename = listplay("linearmin", "image")
+                        getimage(filename, dummy, mp3chk, "linearmin")
                         SDL_DestroyTexture(background_surface)
                         background_surface = IMG_LoadTexture(renderer, filename)
                         ' reset rotation
@@ -402,7 +417,7 @@ while running
                         zoomtype = "zoomsmallimage"
                     case SDL_CONTROLLER_BUTTON_DPAD_RIGHT
                         ' get next image in folder if avaiable
-                        filename = listplay(playtype, "image")
+                        getimage(filename, dummy, mp3chk, playtype)
                         SDL_DestroyTexture(background_surface)
                         background_surface = IMG_LoadTexture(renderer, filename)
                         ' reset rotation
@@ -414,6 +429,7 @@ while running
                         zoomtype = "zoomin"
                     case SDL_CONTROLLER_BUTTON_A
                         zoomtype = "zoomsmallimage"
+                        rotateangle = 0
                     case SDL_CONTROLLER_BUTTON_B
                         if rotateangle > -270 then
                             rotateangle = rotateangle - 90
@@ -495,6 +511,7 @@ while running
         SDL_RenderCopyEx(renderer, background_surface, null, @mrect, rotateangle, null, rotateimage)
     SDL_RenderPresent(renderer)
     if fullscreen then
+        ' nop
     else
         ' framerate counter
         frames+=1
@@ -502,8 +519,12 @@ while running
             tNow=timer()
             fps = 60 / (tNow-tLast)
             tLast=tNow
-        end if    
-        SDL_SetWindowTitle(glass, "imageviewer - " + filename + " - " & fps & " fps")' / refresh monitor = " & desktopr)
+        end if
+        if mp3chk then
+            SDL_SetWindowTitle(glass, "imageviewer - " + dummy + " - " & fps & " fps")' / refresh monitor = " & desktopr)
+        else
+            SDL_SetWindowTitle(glass, "imageviewer - " + filename + " - " & fps & " fps")' / refresh monitor = " & desktopr)
+        end if
     end if
 
     ' decrease cpu usage
@@ -514,13 +535,16 @@ cleanup:
 ' cleanup listplay files
 delfile(exepath + "\" + "image" + ".tmp")
 delfile(exepath + "\" + "image" + ".lst")
+delfile(exepath + "\thumb.jpg")
+delfile(exepath + "\thumb.png")
 
 'cleanup background, image, renderer, glass
-SDL_DestroyTexture(background_surface)
-SDL_DestroyRenderer(renderer)
-SDL_DestroyWindow(glass)
-IMG_Quit()
-SDL_Quit()
+if chk Then
+    SDL_DestroyTexture(background_surface)
+    SDL_DestroyRenderer(renderer)
+    SDL_DestroyWindow(glass)
+    IMG_Quit()
+    SDL_Quit()
+end if
 close
-
 logentry("terminate", "normal termination " + appname)

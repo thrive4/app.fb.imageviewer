@@ -24,6 +24,34 @@ usecons = "false"
 ' generic check for true or false
 dim chk as boolean
 
+' get version exe for log
+declare function getfileversion(versinfo() as string, versdesc() as string) as integer
+declare function replace(byref haystack as string, byref needle as string, byref substitute as string) as string
+dim as integer c, resp
+dim as string versinfo(8)
+dim as string versdesc(7) =>_
+    {"CompanyName",_
+    "FileDescription",_
+    "FileVersion",_
+    "InternalName",_
+    "LegalCopyright",_
+    "OriginalFilename",_
+    "ProductName",_
+    "ProductVersion"}
+versinfo(8) = appname + ".exe"
+resp = getfileversion(versinfo(),versdesc())
+exeversion = replace(trim(versinfo(2)), ", ", ".")
+
+' get metric os
+dim shared os as string
+os = "unknown"
+#ifdef __FB_WIN32__
+    os = "windows"
+#endif
+#ifdef __FB_UNIX__
+    os = "unix"
+#endif
+
 ' used for logging
 Function logentry(entrytype As String, logmsg As String) As Boolean
 
@@ -43,7 +71,11 @@ Function logentry(entrytype As String, logmsg As String) As Boolean
     logfile = exepath + "\" + appname + ".log"
     if FileExists(logfile) = false then
         Open logfile For output As #f
-        logmsg = exeversion + " " + logfile + " created"
+        logmsg = logfile + " created"
+        print #f, format(now, "dd/mm/yyyy") + " - " + time + "|" + "notice" + "|" + appname + "|" + logmsg
+        logmsg = "version " + exeversion
+        print #f, format(now, "dd/mm/yyyy") + " - " + time + "|" + "notice" + "|" + appname + "|" + logmsg
+        logmsg = "platform " + os
         print #f, format(now, "dd/mm/yyyy") + " - " + time + "|" + "notice" + "|" + appname + "|" + logmsg
         close #f
         exit function
@@ -253,6 +285,88 @@ function getfileversion(versinfo() as string, versdesc() as string) as integer
 
     return 1
 
+end function
+
+' attempt to extract and write cover art of mp3 to temp thumb file
+Function getmp3cover(filename As String) As string
+    Dim buffer  As String
+    dim chunk   as string
+    dim length  as string
+    dim bend    as integer
+    dim ext     as string = ""
+    dim thumb   as string
+    ' remove old thumb if present
+    delfile(exepath + "\thumb.jpg")
+    delfile(exepath + "\thumb.png")
+    Open filename For Binary Access Read As #1
+        If LOF(1) > 0 Then
+            buffer = String(LOF(1), 0)
+            Get #1, , buffer
+        End If
+    Close #1
+    if instr(1, buffer, "APIC") > 0 then
+        length = mid(buffer, instr(buffer, "APIC") + 4, 4)
+        ' ghetto check funky first 4 bytes signifying length image
+        ' not sure how reliable this info is
+        ' see comment codecaster https://stackoverflow.com/questions/47882569/id3v2-tag-issue-with-apic-in-c-net
+        if val(asc(length, 1) & asc(length, 2)) = 0 then
+            bend = (asc(length, 3) shl 8) or asc(length, 4)
+        else
+            bend = (asc(length, 1) shl 24 + asc(length, 2) shl 16 + asc(length, 3) shl 8 or asc(length, 4))
+        end if
+        if instr(1, buffer, "JFIF") > 0 then
+            ' override end jpg if marker FFD9 is present
+            if instr(buffer, CHR(&hFF, &hD9)) > 0 then
+                bend = instr(1, mid(buffer, instr(1, buffer, "JFIF")), CHR(&hFF, &hD9)) + 7
+            end if
+            chunk = mid(buffer, instr(buffer, "JFIF") - 6, bend)
+            ext = ".jpg"
+        end if
+        ' use ext to catch false png
+        if instr(1, buffer, "‰PNG") > 0 and ext = "" then
+            ' override end png if tag is present
+            if instr(1, buffer, "IEND") > 0 then
+                bend = instr(1, mid(buffer, instr(1, buffer, "‰PNG")), "IEND") + 7
+            end if
+            chunk = mid(buffer, instr(buffer, "‰PNG"), bend)
+            ext = ".png"
+        end if
+        ' funky variant for non jfif and jpegs video encoding?
+        if (instr(1, buffer, "Lavc58") > 0 or instr(1, buffer, "Exif") > 0) and ext = "" then
+            ' override end jpg if marker FFD9 is present
+            if instr(buffer, CHR(&hFF, &hD9)) > 0 then
+                bend = instr(1, mid(buffer, instr(1, buffer, "Exif")), CHR(&hFF, &hD9)) + 7
+            end if
+            if instr(1, buffer, "Exif") > 0 then
+                chunk = mid(buffer, instr(buffer, "Exif") - 6, bend)
+            else
+                chunk = mid(buffer, instr(buffer, "Lavc58") - 6, bend)
+            end if
+            ext = ".jpg"
+        end if
+        ' last resort just check on begin and end marker very tricky...
+        ' see https://stackoverflow.com/questions/4585527/detect-end-of-file-for-jpg-images#4614629
+        if instr(buffer, CHR(&hFF, &hD8)) > 0 and ext = ""then
+            chunk = mid(buffer, instr(1, buffer, CHR(&hFF, &hD8)), instr(1, buffer, CHR(&hFF, &hD9)))
+            ext = ".jpg"
+        end if
+        buffer = ""
+        Close #1
+        ' attempt to write thumbnail to temp file
+        if ext <> "" then
+            thumb = exepath + "\thumb" + ext
+            open thumb for Binary Access Write as #1
+                put #1, , chunk
+            close #1
+        else
+            ' no cover art in mp3 optional use folder.jpg if present as thumb
+        end if
+        return thumb
+    else
+        ' no cover art in mp3 optional use folder.jpg if present as thumb
+        logentry("notice", "no cover art found in: " + filename)
+        return ""
+    end if
 end function
 
 ' split or explode by delimiter return elements in array
