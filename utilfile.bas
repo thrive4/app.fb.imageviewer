@@ -320,10 +320,21 @@ Function getmp3cover(filename As String) As string
                 bend = instr(1, mid(buffer, instr(1, buffer, "JFIF")), CHR(&hFF, &hD9)) + 7
             end if
             chunk = mid(buffer, instr(buffer, "JFIF") - 6, bend)
+            ' thumbnail detection
+            if instr(instr(1, buffer, "JFIF") + 4, buffer, "JFIF") > 0 then
+                chunk = mid(buffer, instr(10, buffer, CHR(&hFF, &hD8)), instr(instr(buffer, CHR(&hFF, &hD9)) + 1, buffer, CHR(&hFF, &hD9)) - (instr(10, buffer, CHR(&hFF, &hD8)) - 2))
+                ' thumbnail in thumbnail edge case ffd8 ffd8 ffd9 ffd9 pattern in jpeg
+                if instr(chunk, CHR(&hFF, &hD8, &hFF)) > 0 then
+                    chunk = mid(buffer,_
+                    instr(1,buffer, CHR(&hFF, &hD8)),_
+                    instr(instr(instr(instr(1,buffer, CHR(&hFF, &hD9)) + 1, buffer, CHR(&hFF, &hD9)) + 1, buffer, CHR(&hFF, &hD9))_
+                    , buffer, CHR(&hFF, &hD9)) + 2 - instr(buffer, CHR(&hFF, &hD8)))
+                end if
+            end if
             ext = ".jpg"
         end if
-        ' use ext to catch false png
-        if instr(1, buffer, "‰PNG") > 0 and ext = "" then
+        ' use ext and exif check to catch false png
+        if instr(1, buffer, "‰PNG") > 0 and instr(1, buffer, "Exif") = 0 and ext = "" then
             ' override end png if tag is present
             if instr(1, buffer, "IEND") > 0 then
                 bend = instr(1, mid(buffer, instr(1, buffer, "‰PNG")), "IEND") + 7

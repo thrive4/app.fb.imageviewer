@@ -320,6 +320,8 @@ while running
                         zoomtype = "zoomsmallimage"
                         goto initsdl
                 end select
+                IMG_Quit()
+                close
             ' zoom manual
             case SDL_KEYDOWN and event.key.keysym.sym = SDLK_KP_PLUS
                 zoomtype = "zoomin"

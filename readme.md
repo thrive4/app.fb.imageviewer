@@ -15,6 +15,13 @@ https://github.com/libsdl-org/SDL/releases
 \
 sdl image (32bit) v2.6.0.0\
 https://github.com/libsdl-org/SDL_image/releases
+## performance
+windows 7 / windows 10(1903)\
+ram usage ~20MB / 20MB (pending image size)\
+handles   ~160 / ~200\
+threads   11 / 16\
+cpu       ~1 (low) / ~2\
+tested on intel i5-6600T
 ## navigation
 arrow     | dpad left  | mouse left : back\
 arrow     | dpad right | mouse right: forward\
