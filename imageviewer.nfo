@@ -1,0 +1,18 @@
+update v1.2 15/05/2023
+- added screen dimming, interval can be set via conf.ini
+- improved command line handling catches incorrect files and paths
+- added SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1")
+> respond to power plan settings blank display on windows 
+> note: set before sdl init (video) otherwise it will not work!
+- tweaked utilfile.bas more in line with other apps
+- tweaked shuffleplay scanning from root dir is not supported
+- tieded up code in most files
+
+update v1.1 20/03/2023
+- better thumbnail detection in jpeg
+  pattern ffd8 ffd8 ffd9 ffd9 next to
+  pattern ffd8 ffd9 ffd8 ffd9
+- better png check using exif as check
+- update sdl2 to v2.24.2.0
+  sdl_image to v2.6.2.0
+- misc bugfixes stability and error handling

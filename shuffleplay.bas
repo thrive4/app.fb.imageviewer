@@ -1,15 +1,15 @@
 ' based on recursive dir code of coderjeff https://www.freebasic.net/forum/viewtopic.php?t=5758
 function createlist(folder as string, filterext as string, listname as string) as integer
     ' setup filelist
-    dim chk as boolean
-    redim path(1 to 1) As string
     dim as integer i = 1, n = 1, attrib
-    dim file as string
-    dim fileext as string
-    dim maxfiles as integer
-    dim f as integer
+    redim path(1 to 1)    as string
+    dim chk               as boolean
+    dim file              as string
+    dim fileext           as string
+    dim maxfiles          as integer
+    dim f                 as integer
     f = freefile
-    dim filelist as string = exepath + "\" + listname + ".tmp"
+    dim filelist          as string = exepath + "\" + listname + ".tmp"
     open filelist for output as #f
 
     #ifdef __FB_LINUX__
@@ -32,18 +32,23 @@ function createlist(folder as string, filterext as string, listname as string) a
         while file > ""
             if (attrib and fbDirectory) then
                 if file <> "." and file <> ".." then
-                    n += 1
-                    redim preserve path(1 to n)
-                    path(n) = path(i) + file + pathchar
+                    ' todo evaluate limit recursive if starting folder is root
+                    if len(path(1)) > 3 then
+                       n += 1
+                       redim preserve path(1 to n)
+                       path(n) = path(i) + file + pathchar
+                    else
+                        logentry("terminate", "scanning from root dir not supported! " + path(i))
+                    end if
                 end if
             else
                 fileext = lcase(mid(file, instrrev(file, ".")))
-                if instr(1, filterext, fileext) > 0 and len(fileext) > 3 then 
+                if instr(1, filterext, fileext) > 0 and len(fileext) > 3 then
                     print #f, path(i) & file
                     maxfiles += 1
                 else
                     logentry("warning", "file format not supported - " + path(i) & file)
-                end if    
+                end if
             end if
             file = dir(@attrib)
         wend
@@ -65,24 +70,24 @@ function createlist(folder as string, filterext as string, listname as string) a
 
 end function
 
-dim shared currentimage as integer
-dim shared currentsong as integer
+dim shared currentimage  as integer
+dim shared currentsong   as integer
 dim shared currentshader as integer
 ' video shuffle is handeld by mpv
-dim shared currentvideo as integer
+dim shared currentvideo  as integer
 ' todo fix currentimage for music
 function listplay (playtype as string, listname as string) as string
 
     ' setup item file and item count
-    dim tmp as integer
-    dim chk as boolean
-    Dim listitem as string
+    dim tmp         as integer
+    dim chk         as boolean
+    Dim listitem    as string
     Dim currentitem as integer
-    dim itemnr as integer   = 1
-    dim maxitems as integer = 0
-    dim baseitem as integer
-    dim lastitem as string = exepath + "\" + listname + ".lst"
-    dim tempfile as string = exepath + "\" + listname + ".tmp"
+    dim itemnr      as integer = 1
+    dim maxitems    as integer = 0
+    dim baseitem    as integer
+    dim lastitem    as string = exepath + "\" + listname + ".lst"
+    dim tempfile    as string = exepath + "\" + listname + ".tmp"
 
     ' work around for multiple lists todo improve
     select case listname

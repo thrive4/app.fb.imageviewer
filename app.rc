@@ -10,8 +10,8 @@ FB_PROGRAM_ICON ICON "app.ico"
 
 // add version and file info in exe windows only
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1, 1, 0, 000
-PRODUCTVERSION 1, 1, 0, 0
+FILEVERSION 1, 2, 0, 000
+PRODUCTVERSION 1, 2, 0, 0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x9L
@@ -29,13 +29,13 @@ BEGIN
             VALUE "Comments", "needs sdl and sdl_image libs"
             VALUE "CompanyName", "thrive4"
             VALUE "FileDescription", "imageviewer"
-            VALUE "FileVersion", "1, 1, 0, 000"
+            VALUE "FileVersion", "1, 2, 0, 000"
             VALUE "InternalName", ""
             VALUE "LegalCopyright", ""
             VALUE "OriginalFilename", "imageviewer"
             VALUE "PrivateBuild", ""
             VALUE "ProductName", "imageviewer"
-            VALUE "ProductVersion", "1, 1, 0, 0"
+            VALUE "ProductVersion", "1, 2, 0, 0"
         END
     END
     BLOCK "VarFileInfo"

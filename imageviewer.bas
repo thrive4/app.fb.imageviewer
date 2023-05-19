@@ -6,27 +6,28 @@
 
 #include once "SDL2/SDL.bi"
 #include once "SDL2/SDL_image.bi"
-' dir function and provides constants to use for the attrib_mask parameter
-#include once "vbcompat.bi"
-#include once "dir.bi"
 #include once "utilfile.bas"
 #include once "shuffleplay.bas"
 #cmdline "app.rc"
 
+' setup imageviewer
 dim event           as SDL_Event
 dim running         as boolean = True
-dim screenwidth     As integer   = 1280
-dim screenheight    As integer  = 720
+dim screenwidth     As integer = 1280
+dim screenheight    As integer = 720
 dim fullscreen      as boolean = false
 dim desktopw        as integer
 dim desktoph        as integer
 dim desktopr        as integer
 dim rotateimage     as SDL_RendererFlip = SDL_FLIP_NONE
 dim rotateangle     as double = 0
+
 'zoomtype options stretch, scaled, zoomsmallimage
 dim zoomtype        as string = "zoomsmallimage"
-dim dummy           as string
-dim mp3chk          as boolean
+dim shared dummy    as string
+dim shared mp3chk   as boolean
+dummy = ""
+mp3chk = false
 ' get desktop info
 ScreenInfo desktopw, desktoph,,,desktopr
 
@@ -37,16 +38,23 @@ dim as double tLast=tStart
 
 ' setup list of images for background
 dim filename    as string
+dim fileext     as string = ""
 dim imagefolder as string
 dim imagetypes  as string = ".bmp, .gif, .jpg, .mp3, .png, .pcx, .jpeg, .tff" 
 dim playtype    as string = "linear"
 
-' define specific area for overlay
-dim srcrect as SDL_Rect
-srcrect.x = 100
-srcrect.y = 0
-srcrect.w = 32
-srcrect.h = 32
+' screensaver
+'dim screensavepath     as string  = backgroundpath
+dim screensaveinterval as integer = 30 * 1000 ' in seconds
+dim screensaveactive   as boolean = false
+dim screensaveinittime as integer = 0
+dim screensavetype     as string  = "dimscreen"
+dim currenttime        as integer = 0
+dim fadetime           as single = ((screensaveinterval / 1000) * 1.25) / (screensaveinterval / 1000)
+dim fade               as integer = 255
+
+' define area dim screen
+dim dimscreen as SDL_Rect
 
 ' main area for rendering
 dim mrect  as SDL_Rect
@@ -107,6 +115,16 @@ else
                     case "logtype"
                         logtype = inival
                     case "kback"
+                        ' nop
+                    case "screensaveinterval"
+                        screensaveinterval = val(inival) * 1000
+                        if screensaveinterval = 0 or screensaveinterval <= 10000 then
+                            logentry("notice", "screensaver interval set to lower than minimum 10 sec, forced to (default) 30 sec")                            
+                            screensaveinterval = 30000
+                        end if
+                        fadetime = ((screensaveinterval / 1000) * 1.25) / (screensaveinterval / 1000)
+                    case "screensavetype"
+                        screensavetype = inival
                 end select
             end if
             'print inikey + " - " + inival
@@ -117,7 +135,7 @@ end if
 
 select case command(2)
     case "/?", "-man", ""
-        displayhelp
+        displayhelp(locale)
     case "fullscreen"
         screenwidth  = desktopw
         screenheight = desktoph
@@ -128,7 +146,23 @@ select case command(2)
 end select
 
 ' get images if applicable override first image with preferd a specific image
+imagefolder = command(1)
 if instr(command(1), ".") <> 0 then
+    fileext = lcase(mid(command(1), instrrev(command(1), ".")))
+    if instr(1, imagetypes, fileext) = 0 then
+        print command(1) + " file type not supported"
+        end
+    end if
+    if FileExists(exepath + "\" + command(1)) = false then
+        if FileExists(imagefolder) then
+            'nop
+        else
+            print imagefolder + " does not excist or is incorrect"
+            end
+        end if
+    else
+        imagefolder = exepath + "\" + command(1)
+    end if
     filename = command(1)    
     imagefolder = left(command(1), instrrev(command(1), "\") - 1)
     chk = createlist(imagefolder, imagetypes, "image")
@@ -151,15 +185,20 @@ else
             goto cleanup
         end if
     end if
-end if    
+end if
 
 ' check and get mp3 cover art
-sub checkmp3cover(byref filename as string, byref dummy as string, byref mp3chk as boolean)
-    if instr(filename, ".mp3") > 0 then
-        dummy = filename
-        filename = getmp3cover(filename)
+sub checkmp3cover(byref filename as string)
+    if getmp3cover(filename) and instr(filename, ".mp3") > 0 then
+        dummy  = filename
         mp3chk = true
+        if FileExists(exepath + "\thumb.jpg") then
+            filename = exepath + "\thumb.jpg"
+        else
+            filename = exepath + "\thumb.png"
+        end if
     else
+        dummy  = ""
         mp3chk = false
     end if
 end sub
@@ -167,24 +206,33 @@ end sub
 ' get next or previous image
 sub getimage(byref filename as string, byref dummy as string, byref mp3chk as boolean, byval playtype as string)
     filename = listplay(playtype, "image")
-    checkmp3cover(filename, dummy, mp3chk)
+    checkmp3cover(filename)
     ' validate if false get next image
     if filename = "" or FileExists(filename) = false then
         filename = listplay(playtype, "image")
-        checkmp3cover(filename, dummy, mp3chk)
+        checkmp3cover(filename)
     end if
 end sub
 
+' check if mp3 coverart present keep outside f11 fullscreen toggle
+checkmp3cover(filename)
+
 initsdl:
 ' init window and render
-If (SDL_Init(SDL_INIT_VIDEO) = not NULL) Then 
+SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1")
+' respond to power plan settings blank display on windows set hint before sdl init video
+If (SDL_Init(SDL_INIT_VIDEO) = not NULL) Then
     logentry("terminate", "sdl2 video could not be initlized error: " + *SDL_GetError())
     SDL_Quit()
 else
     ' no audio needed
     SDL_QuitSubSystem(SDL_INIT_AUDIO)
     ' render scale quality: 0 point, 1 linear, 2 anisotropic
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1")
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1") 
+   ' filter non used events
+    SDL_EventState(SDL_FINGERMOTION,    SDL_IGNORE)
+    SDL_EventState(SDL_MULTIGESTURE,    SDL_IGNORE)
+    SDL_EventState(SDL_DOLLARGESTURE,   SDL_IGNORE)
 End If
 ' setup glass aka window
 Dim As SDL_Window Ptr glass
@@ -205,6 +253,11 @@ if (renderer = NULL) Then
     logentry("terminate", "abnormal termination sdl2 could not create renderer")
 	SDL_Quit()
 EndIf
+' setup dim screen dimensions
+dimscreen.x = 0
+dimscreen.y = 0
+dimscreen.w = screenwidth
+dimscreen.h = screenheight
 
 ' gamepad
 dim deadzone as integer = 8192
@@ -231,7 +284,6 @@ Dim As ZString Ptr map = SDL_GameControllerMapping(controller)
 
 ' load texture
 Dim As SDL_Texture Ptr background_surface
-checkmp3cover(filename, dummy, mp3chk)
 SDL_DestroyTexture(background_surface)
 background_surface = IMG_LoadTexture(renderer, filename)
 ' verify load image
@@ -286,15 +338,18 @@ end function
 ' main
 while running
     dim as double tNow=Timer()    
+    ' screen dimmer / saver timer in microseconds
+    currenttime = SDL_GetTicks()
+
     while SDL_PollEvent(@event) <> 0
-        ' filter non used events
-        SDL_EventState(SDL_FINGERMOTION,    SDL_IGNORE)
-        SDL_EventState(SDL_MULTIGESTURE,    SDL_IGNORE)
-        SDL_EventState(SDL_DOLLARGESTURE,   SDL_IGNORE)
         ' basic interaction
         select case event.type
             case SDL_KEYDOWN and event.key.keysym.sym = SDLK_ESCAPE
-                running = False
+                if screensaveactive then
+                    ' nop
+                else
+                    running = False
+                end if
             case SDL_WINDOWEVENT and event.window.event = SDL_WINDOWEVENT_CLOSE
                 running = False
             case SDL_KEYDOWN and event.key.keysym.sym = SDLK_F11
@@ -465,6 +520,13 @@ while running
                 logentry("notice", "switched to game controller: " & *SDL_GameControllerName(controller))
                 map = SDL_GameControllerMapping(controller)
         end select
+        if screensaveactive then
+            screensaveactive   = false
+            screensaveinittime = currenttime
+            fade               = 255
+            SDL_DestroyTexture(background_surface)
+            background_surface = IMG_LoadTexture(renderer, filename)
+        end if
     wend
 
     ' scaling image
@@ -511,6 +573,21 @@ while running
         mrect.w = scaledw
         mrect.h = scaledh
         SDL_RenderCopyEx(renderer, background_surface, null, @mrect, rotateangle, null, rotateimage)
+        ' screen dimming or screensaver
+        if (currenttime > screensaveinittime + screensaveinterval) then
+            select case screensavetype
+                case "dimscreen"
+                    ' fade to black
+                    if fade > 0 then
+                        SDL_SetTextureColorMod(background_surface, fade, fade, fade)
+                        fade -= fadetime
+                    end if
+                    screensaveactive = true
+                case "displayoff"
+                    ' ignore for now
+                    'SendMessage(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, 2)
+            end select
+        end if
     SDL_RenderPresent(renderer)
     if fullscreen then
         ' nop
@@ -530,7 +607,7 @@ while running
     end if
 
     ' decrease cpu usage
-    SDL_Delay(30)
+    SDL_Delay(25)
 wend
 
 cleanup:
