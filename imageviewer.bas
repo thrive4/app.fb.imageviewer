@@ -16,6 +16,8 @@ dim running         as boolean = True
 dim screenwidth     As integer = 1280
 dim screenheight    As integer = 720
 dim fullscreen      as boolean = false
+dim fps             as ulong   = 30
+dim fpscurrent      as ulong
 dim desktopw        as integer
 dim desktoph        as integer
 dim desktopr        as integer
@@ -31,16 +33,11 @@ mp3chk = false
 ' get desktop info
 ScreenInfo desktopw, desktoph,,,desktopr
 
-' init framerate counter
-dim as integer frames,fps
-dim as double tStart = Timer()
-dim as double tLast=tStart
-
 ' setup list of images for background
 dim filename    as string
 dim fileext     as string = ""
 dim imagefolder as string
-dim imagetypes  as string = ".bmp, .gif, .jpg, .mp3, .png, .pcx, .jpeg, .tff" 
+dim imagetypes  as string = ".bmp, .gif, .jpg, .mp3, .png, .pcx, .jpeg, .svg, .tff" 
 dim playtype    as string = "linear"
 
 ' screensaver
@@ -84,7 +81,7 @@ dim kback as integer
 dim itm     as string
 dim inikey  as string
 dim inival  as string
-dim inifile as string = exepath + "\conf.ini"
+dim inifile as string = exepath + "\conf\conf.ini"
 dim f as integer
 if FileExists(inifile) = false then
     logentry("error", inifile + "file does not excist")
@@ -150,15 +147,15 @@ imagefolder = command(1)
 if instr(command(1), ".") <> 0 then
     fileext = lcase(mid(command(1), instrrev(command(1), ".")))
     if instr(1, imagetypes, fileext) = 0 then
-        print command(1) + " file type not supported"
-        end
+        dummy = command(1) + " file type not supported"
+        logentry("terminate", "abnormal termination " + dummy)
     end if
     if FileExists(exepath + "\" + command(1)) = false then
         if FileExists(imagefolder) then
             'nop
         else
-            print imagefolder + " does not excist or is incorrect"
-            end
+            dummy = imagefolder + " does not excist or is incorrect"
+            logentry("terminate", "abnormal termination " + dummy)
         end if
     else
         imagefolder = exepath + "\" + command(1)
@@ -170,8 +167,8 @@ else
     if instr(command(1), ":") <> 0 then
         imagefolder = command(1)
         if checkpath(imagefolder) = false then
-            print "error: path not found " + imagefolder
-            goto cleanup
+            dummy =  "error: path not found " + imagefolder
+            logentry("terminate", "abnormal termination " + dummy)
         else
             chk = createlist(imagefolder, imagetypes, "image")
             filename = listplay(playtype, "image")
@@ -181,7 +178,9 @@ else
         chk = createlist(imagefolder, imagetypes, "image")
         filename = listplay(playtype, "image")
         if chk = false then
-            PRINT "notice: no displayable files found"
+            dummy = "no displayable files found"
+            print dummy    
+            logentry("notice", dummy)
             goto cleanup
         end if
     end if
@@ -213,6 +212,65 @@ sub getimage(byref filename as string, byref dummy as string, byref mp3chk as bo
         checkmp3cover(filename)
     end if
 end sub
+
+' via https://www.freebasic.net/forum/viewtopic.php?p=299305&sid=71b9b1edd5e91553b901d064a45ad12c#p299305 by fxm
+Function syncfps(ByVal MyFps As Ulong, ByVal SkipImage As Boolean = True, ByVal Restart As Boolean = False) As Ulong
+    '' 'MyFps' : requested FPS value, in frames per second
+    '' 'SkipImage' : optional parameter to activate the image skipping (True by default)
+    '' 'Restart' : optional parameter to force the resolution acquisition, to reset to False on the ext call (False by default)
+    '' function return : applied FFS value, in frames per second
+    Static As Single tos
+    Static As Single bias
+    If tos = 0 Or Restart = True Then
+        Dim As Double t = Timer
+        For I As Integer = 1 To 10
+            Sleep 1, 1
+        Next I
+        Dim As Double tt = Timer
+        #if Not defined(__FB_WIN32__) And Not defined(__FB_LINUX__)
+        If tt < t Then t -= 24 * 60 * 60
+        #endif
+        tos = (tt - t) / 10 * 1000
+        bias = 0.55 * tos - 0.78
+    End If
+    Static As Double t1
+    Static As Double t3
+    Static As Long N = 1
+    Static As Long k = 1
+    Static As Ulong fps
+    Static As Single tf
+    If N >= k Then
+        Dim As Double t2 = Timer
+        #if Not defined(__FB_WIN32__) And Not defined(__FB_LINUX__)
+        If t2 < t1 Then t1 -= 24 * 60 * 60
+        #endif
+        t3 = t2
+        Dim As Single dt = (k * tf - (t2 - t1)) * 1000 - bias
+        If dt < 1 Then dt = 1
+        Sleep dt, 1
+        t2 = Timer
+        #if Not defined(__FB_WIN32__) And Not defined(__FB_LINUX__)
+        If t2 < t1 Then t1 -= 24 * 60 * 60 : t3 -= 24 * 60 * 60
+        #endif
+        fps = k / (t2 - t1)
+        t1 = t2
+        Dim As Single delta = (t2 - t3) * 1000 - (dt + bias)
+        bias += 0.1 * Sgn(delta)
+        tf = 1 / MyFps
+        Dim As Single tos0 = tos
+        If tos0 > 24 Then tos0 = 24
+        If tos0 < 4.8 Then tos0 = 4.8
+        k = Int(MyFps / 240 * tos0)
+        If k = 0 Or SkipImage = False Then k = 1
+        If Abs(delta) > 3 * tos Then
+            tos = 0
+        End If
+        N = 1
+    Else
+        N += 1
+    End If
+    Return fps
+End Function
 
 ' check if mp3 coverart present keep outside f11 fullscreen toggle
 checkmp3cover(filename)
@@ -337,7 +395,6 @@ end function
 
 ' main
 while running
-    dim as double tNow=Timer()    
     ' screen dimmer / saver timer in microseconds
     currenttime = SDL_GetTicks()
 
@@ -589,25 +646,20 @@ while running
             end select
         end if
     SDL_RenderPresent(renderer)
+
+    fpscurrent = syncfps(fps)
     if fullscreen then
         ' nop
     else
-        ' framerate counter
-        frames+=1
-        if frames mod 60 = 0 then
-            tNow=timer()
-            fps = 60 / (tNow-tLast)
-            tLast=tNow
-        end if
         if mp3chk then
-            SDL_SetWindowTitle(glass, "imageviewer - " + dummy + " - " & fps & " fps")' / refresh monitor = " & desktopr)
+            SDL_SetWindowTitle(glass, "imageviewer - " + dummy    + " - " & fpscurrent & " fps")' / refresh monitor = " & desktopr)
         else
-            SDL_SetWindowTitle(glass, "imageviewer - " + filename + " - " & fps & " fps")' / refresh monitor = " & desktopr)
+            SDL_SetWindowTitle(glass, "imageviewer - " + filename + " - " & fpscurrent & " fps")' / refresh monitor = " & desktopr)
         end if
     end if
 
     ' decrease cpu usage
-    SDL_Delay(25)
+    'SDL_Delay(25)
 wend
 
 cleanup:

@@ -95,7 +95,7 @@ function listplay (playtype as string, listname as string) as string
             currentitem = currentimage
         case "music"
             currentitem = currentsong
-        case "screenshow"
+        case "slideshow"
             currentitem = currentimage
         case "video"
             currentitem = currentvideo
@@ -183,7 +183,7 @@ function listplay (playtype as string, listname as string) as string
                     currentimage = currentitem
                 case "music"
                     currentsong = currentitem
-                case "screenshow"
+                case "slideshow"
                     currentimage = currentitem
                 case "video"
                     currentvideo = currentitem

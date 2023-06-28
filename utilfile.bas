@@ -108,32 +108,6 @@ Function logentry(entrytype As String, logmsg As String) As Boolean
     return true
 End function
 
-' localiztion can be applied by getting a locale or other method
-dim locale as string = "en"
-sub displayhelp(locale as string)
-    dim dummy as string
-    dim f     as integer
-    f = freefile
-    
-    ' get / set locale
-    select case locale
-        case "de"
-            locale = "de"
-        case "en"
-        ' default locale
-        case else
-            locale = "en"
-    end select    
-    ' get text
-    Open exepath + "\help-" + locale + ".ini" For input As #f
-    Do Until EOF(f)
-        Line Input #f, dummy
-        print dummy    
-    Loop
-    close f
-
-end sub
-
 ' get fileversion executable or dll windows only
 function getfileversion(versinfo() as string, versdesc() as string) as integer
 
@@ -301,6 +275,96 @@ Function checkpath(chkpath As String) As boolean
     return true
 
 End Function
+
+' localization file functions
+' ______________________________________________________________________________'
+
+' localization can be applied by getting a locale or other method
+dim locale as string = "en"
+sub displayhelp(locale as string)
+    dim dummy as string
+    dim f     as integer
+    f = freefile
+
+    ' get text
+    if FileExists(exepath + "\conf\" + locale + "\help.ini") then
+        'nop
+    else
+        logentry("error", "open " + exepath + "\conf\" + locale + "\help.ini" + " file does not excist")
+        locale = "en"
+    end if
+    Open exepath + "\conf\" + locale + "\help.ini" For input As #f
+    Do Until EOF(f)
+        Line Input #f, dummy
+        print wstr(dummy)
+    Loop
+    close f
+
+end sub
+
+' setup ui labels aka data spindel
+type tbrec
+    as string fieldname(any)
+    as string fieldvalue(any)
+end type
+dim shared record as tbrec
+common shared recnr as integer
+recnr = 0
+
+' get key value pair cheap localization via ini file
+Function readuilabel(filename as string) as boolean
+    dim itm    as string
+    dim inikey as string
+    dim inival as string
+    dim f      as integer
+
+    if FileExists(filename) = false then
+        logentry("error", filename + " does not excist switching to default language")
+        filename = exepath + "\conf\en\menu.ini"
+    end if
+    f = readfromfile(filename)
+    Do Until EOF(f)
+        Line Input #f, itm
+        if instr(1, itm, "=") > 1 then
+            inikey = trim(mid(itm, 1, instr(1, itm, "=") - 2))
+            inival = trim(mid(itm, instr(1, itm, "=") + 2, len(itm)))
+            if inival = "" then
+                logentry("error", inikey + " has empty value in " + filename)
+                inival = "null"
+            end if
+            'print inikey + " - " + inival
+            recnr += 1
+            redim preserve record.fieldname(0 to recnr)
+            redim preserve record.fieldvalue(0 to recnr)
+            record.fieldname(recnr)  = inikey
+            record.fieldvalue(recnr) = inival
+        end if
+    loop
+    close f
+    return true
+end function
+
+' display ui lable with unicode and semi automatic spacing via offset
+function getuilabelvalue(needle as string, suffix as string = "", offset as integer = 10) as boolean
+    dim fieldname  as string = ""
+    dim fieldvalue as string = ""
+
+    for i as integer = 0 to recnr
+        with record
+            if record.fieldname(i) = needle then
+                fieldname  = record.fieldname(i)
+                fieldvalue = record.fieldvalue(i)
+            end if
+        end with
+    next i
+    if fieldname = "" or fieldvalue = "" then
+        print needle + " not found or empty " + suffix
+        return false
+    else
+        print wstr(fieldvalue + space(offset - Len(fieldvalue)) + suffix)
+        return true
+    end if
+end function
 
 ' file type specific functions
 ' ______________________________________________________________________________'

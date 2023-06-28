@@ -1,3 +1,12 @@
+update v1.3 27/06/2023
+- reworked localization, broader ui scope, utf support and more scalable
+- update sdl2 from 2.24.2.0 to 2.26.5.0
+- update sdl_image from 2.6.2.0 to 2.6.3.0
+- added svg support (todo needs solution for opacity)
+- implemented utilfile.bas generics for several apps
+- implemented cpu syncfps thanks to fxm:
+' via https://www.freebasic.net/forum/viewtopic.php?p=299305&sid=71b9b1edd5e91553b901d064a45ad12c#p299305 by fxm
+
 update v1.2 15/05/2023
 - added screen dimming, interval can be set via conf.ini
 - improved command line handling catches incorrect files and paths
