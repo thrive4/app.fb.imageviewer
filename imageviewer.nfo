@@ -1,3 +1,13 @@
+update v1.4 28/10/2023
+- fixed log creation (missing message)
+- fixed appname made truncation .exe optional
+- fixed checkpath did not set correct path after
+  function exit when path is correct
+- fixed list when initiating with a specific image
+- updated cpu syncfps thanks to fxm
+' via https://www.freebasic.net/forum/viewtopic.php?t=32323
+- misc fixes to getmp3cover
+
 update v1.3 27/06/2023
 - reworked localization, broader ui scope, utf support and more scalable
 - update sdl2 from 2.24.2.0 to 2.26.5.0

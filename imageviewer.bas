@@ -147,15 +147,13 @@ imagefolder = command(1)
 if instr(command(1), ".") <> 0 then
     fileext = lcase(mid(command(1), instrrev(command(1), ".")))
     if instr(1, imagetypes, fileext) = 0 then
-        dummy = command(1) + " file type not supported"
-        logentry("terminate", "abnormal termination " + dummy)
+        logentry("fatal", command(1) + " file type not supported")
     end if
     if FileExists(exepath + "\" + command(1)) = false then
         if FileExists(imagefolder) then
             'nop
         else
-            dummy = imagefolder + " does not excist or is incorrect"
-            logentry("terminate", "abnormal termination " + dummy)
+            logentry("fatal", imagefolder + " does not excist or is incorrect")
         end if
     else
         imagefolder = exepath + "\" + command(1)
@@ -163,12 +161,12 @@ if instr(command(1), ".") <> 0 then
     filename = command(1)    
     imagefolder = left(command(1), instrrev(command(1), "\") - 1)
     chk = createlist(imagefolder, imagetypes, "image")
+    currentimage = setcurrentlistitem("image", filename)
 else
     if instr(command(1), ":") <> 0 then
         imagefolder = command(1)
         if checkpath(imagefolder) = false then
-            dummy =  "error: path not found " + imagefolder
-            logentry("terminate", "abnormal termination " + dummy)
+            logentry("fatal", "error: path not found " + imagefolder)
         else
             chk = createlist(imagefolder, imagetypes, "image")
             filename = listplay(playtype, "image")
@@ -213,14 +211,18 @@ sub getimage(byref filename as string, byref dummy as string, byref mp3chk as bo
     end if
 end sub
 
-' via https://www.freebasic.net/forum/viewtopic.php?p=299305&sid=71b9b1edd5e91553b901d064a45ad12c#p299305 by fxm
-Function syncfps(ByVal MyFps As Ulong, ByVal SkipImage As Boolean = True, ByVal Restart As Boolean = False) As Ulong
+' via https://www.freebasic.net/forum/viewtopic.php?t=32323 by fxm
+Function syncfps(ByVal MyFps As Ulong, ByVal SkipImage As Boolean = True, ByVal Restart As Boolean = False, ByRef ImageSkipped As Boolean = False) As Ulong
     '' 'MyFps' : requested FPS value, in frames per second
     '' 'SkipImage' : optional parameter to activate the image skipping (True by default)
-    '' 'Restart' : optional parameter to force the resolution acquisition, to reset to False on the ext call (False by default)
-    '' function return : applied FFS value, in frames per second
+    '' 'Restart' : optional parameter to force the resolution acquisition, to reset to False on the next call (False by default)
+    '' 'ImageSkipped' : optional parameter to inform the user that the image has been skipped (if image skipping is activated)
+    '' function return : applied FPS value (true or apparent), in frames per second
     Static As Single tos
     Static As Single bias
+    Static As Long count
+    Static As Single sum
+    ' initialization calibration
     If tos = 0 Or Restart = True Then
         Dim As Double t = Timer
         For I As Integer = 1 To 10
@@ -231,42 +233,54 @@ Function syncfps(ByVal MyFps As Ulong, ByVal SkipImage As Boolean = True, ByVal 
         If tt < t Then t -= 24 * 60 * 60
         #endif
         tos = (tt - t) / 10 * 1000
-        bias = 0.55 * tos - 0.78
+        bias = 0
+        count = 0
+        sum = 0
     End If
     Static As Double t1
-    Static As Double t3
     Static As Long N = 1
-    Static As Long k = 1
     Static As Ulong fps
     Static As Single tf
-    If N >= k Then
-        Dim As Double t2 = Timer
-        #if Not defined(__FB_WIN32__) And Not defined(__FB_LINUX__)
-        If t2 < t1 Then t1 -= 24 * 60 * 60
-        #endif
-        t3 = t2
-        Dim As Single dt = (k * tf - (t2 - t1)) * 1000 - bias
-        If dt < 1 Then dt = 1
+    ' delay generation
+    Dim As Double t2 = Timer
+    #if Not defined(__FB_WIN32__) And Not defined(__FB_LINUX__)
+    If t2 < t1 Then t1 -= 24 * 60 * 60
+    #endif
+    Dim As Double t3 = t2
+    Dim As Single dt = (N * tf - (t2 - t1)) * 1000 - bias
+    If (dt >= 3 * tos / 2) Or (SkipImage = False) Or (N >= 20) Or (fps / N <= 10) Then
+        If dt <= tos Then dt = tos / 2
         Sleep dt, 1
         t2 = Timer
         #if Not defined(__FB_WIN32__) And Not defined(__FB_LINUX__)
         If t2 < t1 Then t1 -= 24 * 60 * 60 : t3 -= 24 * 60 * 60
         #endif
-        fps = k / (t2 - t1)
-        t1 = t2
-        Dim As Single delta = (t2 - t3) * 1000 - (dt + bias)
-        bias += 0.1 * Sgn(delta)
+        fps = N / (t2 - t1)
         tf = 1 / MyFps
-        Dim As Single tos0 = tos
-        If tos0 > 24 Then tos0 = 24
-        If tos0 < 4.8 Then tos0 = 4.8
-        k = Int(MyFps / 240 * tos0)
-        If k = 0 Or SkipImage = False Then k = 1
+        t1 = t2
+        ' automatic test and regulation
+        Dim As Single delta = (t2 - t3) * 1000 - (dt + bias)
         If Abs(delta) > 3 * tos Then
             tos = 0
+        Else
+            bias += 0.1 * Sgn(delta)
         End If
+        ' automatic calibation
+        If dt < tos Then
+            If count = 100 Then
+                tos = sum / 100 * 1000
+                bias = 0
+                sum = 0
+                count = 0
+            Else
+                sum += (t2 - t3)
+                count += 1
+            End If
+        End If
+        ImageSkipped = False
         N = 1
     Else
+        ImageSkipped = True
         N += 1
     End If
     Return fps
@@ -302,14 +316,14 @@ else
     glass = SDL_CreateWindow( "imageviewer", 100, 100, screenwidth, screenheight, SDL_WINDOW_RESIZABLE)
 end if
 if (glass = NULL) Then
-    logentry("terminate", "abnormal termination sdl2 could not create window")
 	SDL_Quit()
+    logentry("fatal", "abnormal termination sdl2 could not create window")
 EndIf
 Dim As SDL_Renderer Ptr renderer = SDL_CreateRenderer(glass, -1, SDL_RENDERER_ACCELERATED Or SDL_RENDERER_PRESENTVSYNC)
 'SDL_SetWindowOpacity(glass, 0.5)
 if (renderer = NULL) Then	
-    logentry("terminate", "abnormal termination sdl2 could not create renderer")
 	SDL_Quit()
+    logentry("fatal", "abnormal termination sdl2 could not create renderer")
 EndIf
 ' setup dim screen dimensions
 dimscreen.x = 0
@@ -347,9 +361,9 @@ background_surface = IMG_LoadTexture(renderer, filename)
 ' verify load image
 if ( background_surface = NULL ) Then
 	'cleanup(background, image, renderer, window)
-    logentry("terminate", "abnormal termination sdl2 could not create texture")
 	IMG_Quit()
 	SDL_Quit()
+    logentry("fatal", "abnormal termination sdl2 could not create texture")
 EndIf
 
 ' scale and posisition image scale needs to be a float
@@ -647,6 +661,7 @@ while running
         end if
     SDL_RenderPresent(renderer)
 
+    ' sync fps and decrease cpu usage
     fpscurrent = syncfps(fps)
     if fullscreen then
         ' nop
@@ -657,9 +672,6 @@ while running
             SDL_SetWindowTitle(glass, "imageviewer - " + filename + " - " & fpscurrent & " fps")' / refresh monitor = " & desktopr)
         end if
     end if
-
-    ' decrease cpu usage
-    'SDL_Delay(25)
 wend
 
 cleanup:

@@ -22,7 +22,9 @@ dim shared exeversion as string
 ' note command(0) can arbitraly add the path so strip it
 appname = mid(command(0), instrrev(command(0), "\") + 1)
 ' without file extension
-appname = left(appname, len(appname) - 4)
+if instr(appname, ".exe") > 0 then
+    appname = left(appname, len(appname) - 4)
+end if
 ' options logtype verbose, full
 logtype = "verbose"
 ' options usecons true, false
@@ -62,6 +64,7 @@ os = "unknown"
 ' ______________________________________________________________________________'
 
 ' used for logging
+' entrytypes: error, fatal, notice, warning, terminate
 Function logentry(entrytype As String, logmsg As String) As Boolean
 
     ' validate logentry
@@ -80,18 +83,14 @@ Function logentry(entrytype As String, logmsg As String) As Boolean
     logfile = exepath + "\" + appname + ".log"
     if FileExists(logfile) = false then
         Open logfile For output As #f
-        logmsg = logfile + " created"
-        print #f, format(now, "dd/mm/yyyy") + " - " + time + "|" + "notice" + "|" + appname + "|" + logmsg
-        logmsg = "version " + exeversion
-        print #f, format(now, "dd/mm/yyyy") + " - " + time + "|" + "notice" + "|" + appname + "|" + logmsg
-        logmsg = "platform " + os
-        print #f, format(now, "dd/mm/yyyy") + " - " + time + "|" + "notice" + "|" + appname + "|" + logmsg
+        print #f, format(now, "dd/mm/yyyy") + " - " + time + "|" + "notice" + "|" + appname + "|" + logfile + " created"
+        print #f, format(now, "dd/mm/yyyy") + " - " + time + "|" + "notice" + "|" + appname + "|" + "version " + exeversion
+        print #f, format(now, "dd/mm/yyyy") + " - " + time + "|" + "notice" + "|" + appname + "|" + "platform " + os
         close #f
-        exit function
     end if
 
-    if entrytype <> "error" and entrytype <> "terminate" and logtype = "verbose" then
-        exit function
+    if (entrytype = "warning" or entrytype = "notice") and logtype = "verbose" then
+        return true
     end if
 
     ' write to logfile
@@ -100,10 +99,13 @@ Function logentry(entrytype As String, logmsg As String) As Boolean
     close #f
 
     ' normal termination or fatal error
-    if entrytype = "terminate" then
-        print logmsg
-        end
-    end if
+    select case entrytype
+        case "fatal"
+            print logmsg
+            end
+        case "terminate"
+            end
+    end select
 
     return true
 End function
@@ -661,15 +663,17 @@ Function getmp3cover(filename As String) As boolean
     dim bend    as integer
     dim ext     as string = ""
     dim thumb   as string
+    dim f       as integer
+    f = freefile
     ' remove old thumb if present
     delfile(exepath + "\thumb.jpg")
     delfile(exepath + "\thumb.png")
-    Open filename For Binary Access Read As #1
-        If LOF(1) > 0 Then
-            buffer = String(LOF(1), 0)
-            Get #1, , buffer
+    Open filename For Binary Access Read As #f
+        If LOF(f) > 0 Then
+            buffer = String(LOF(f), 0)
+            Get #f, , buffer
         End If
-    Close #1
+    Close #f
     if instr(1, buffer, "APIC") > 0 then
         length = mid(buffer, instr(buffer, "APIC") + 4, 4)
         ' ghetto check funky first 4 bytes signifying length image
@@ -728,13 +732,14 @@ Function getmp3cover(filename As String) As boolean
             ext = ".jpg"
         end if
         buffer = ""
-        Close #1
+        'Close #1
         ' attempt to write thumbnail to temp file
         if ext <> "" then
+            f = freefile
             thumb = exepath + "\thumb" + ext
-            open thumb for Binary Access Write as #1
-                put #1, , chunk
-            close #1
+            open thumb for Binary Access Write as #f
+                put #f, , chunk
+            close #f
         else
             ' no cover art in mp3 optional use folder.jpg if present as thumb
         end if

@@ -1,15 +1,14 @@
 ' based on recursive dir code of coderjeff https://www.freebasic.net/forum/viewtopic.php?t=5758
 function createlist(folder as string, filterext as string, listname as string) as integer
     ' setup filelist
-    dim as integer i = 1, n = 1, attrib
-    redim path(1 to 1)    as string
-    dim chk               as boolean
-    dim file              as string
-    dim fileext           as string
-    dim maxfiles          as integer
-    dim f                 as integer
+    dim chk            as boolean
+    redim path(1 to 1) As string
+    dim as integer i = 1, n = 1, f, attrib
+    dim file           as string
+    dim fileext        as string
+    dim maxfiles       as integer
     f = freefile
-    dim filelist          as string = exepath + "\" + listname + ".tmp"
+    dim filelist as string = exepath + "\" + listname + ".tmp"
     open filelist for output as #f
 
     #ifdef __FB_LINUX__
@@ -34,21 +33,21 @@ function createlist(folder as string, filterext as string, listname as string) a
                 if file <> "." and file <> ".." then
                     ' todo evaluate limit recursive if starting folder is root
                     if len(path(1)) > 3 then
-                       n += 1
-                       redim preserve path(1 to n)
-                       path(n) = path(i) + file + pathchar
+                        n += 1
+                        redim preserve path(1 to n)
+                        path(n) = path(i) + file + pathchar
                     else
                         logentry("terminate", "scanning from root dir not supported! " + path(i))
                     end if
                 end if
             else
                 fileext = lcase(mid(file, instrrev(file, ".")))
-                if instr(1, filterext, fileext) > 0 and len(fileext) > 3 then
+                if instr(1, filterext, fileext) > 0 and len(fileext) > 3 then 
                     print #f, path(i) & file
                     maxfiles += 1
                 else
                     logentry("warning", "file format not supported - " + path(i) & file)
-                end if
+                end if    
             end if
             file = dir(@attrib)
         wend
@@ -58,8 +57,7 @@ function createlist(folder as string, filterext as string, listname as string) a
 
     ' chk if filelist is created
     if FileExists(filelist) = false then
-        print "could not create filelist: " + filelist
-        exit function
+        logentry("warning", "could not create filelist: " + filelist)
     end if
     
     ' setup base shuffle and reduce probability
@@ -67,7 +65,26 @@ function createlist(folder as string, filterext as string, listname as string) a
     chk = newfile(lastitem)
     
     return maxfiles
+end function
 
+' used for listplay sets selected item as current
+function setcurrentlistitem(listname as string, filename as string) as integer
+    dim listitem as string
+    dim tmp as integer
+    dim itemnr as integer = 1
+
+    ' scan for filename in list
+    listname = exepath + "\" + listname + ".tmp"
+    tmp = readfromfile(listname)
+    Do Until EOF(tmp)
+        Line Input #tmp, listitem
+        if listitem = filename then
+            exit do
+        end if
+        itemnr += 1
+    Loop
+    close(tmp)
+    return itemnr
 end function
 
 dim shared currentimage  as integer
@@ -75,7 +92,6 @@ dim shared currentsong   as integer
 dim shared currentshader as integer
 ' video shuffle is handeld by mpv
 dim shared currentvideo  as integer
-' todo fix currentimage for music
 function listplay (playtype as string, listname as string) as string
 
     ' setup item file and item count
@@ -129,22 +145,27 @@ function listplay (playtype as string, listname as string) as string
         logentry("notice", "item list reset!")
     end if
     itemnr = 1
-
     select case playtype
         case "shuffle"
             ' choose an item
             randomize
             baseitem = int(rnd * maxitems) + 1
-
             ' fill lastitem list and check if item is already used
             tmp = readfromfile(lastitem)
             Do Until EOF(tmp)
                 Line Input #tmp, listitem
+                ' check if already chosen reduce probabilty clunky but works....
                 if val(listitem) = baseitem then
-                    'print "old item " & listitem & " new choice " & baseitem
                     ' roll the dice and hope for the best
                     randomize
                     baseitem = int(rnd * maxitems) + 1
+                    'print "old item #1" & listitem & " new choice " & baseitem
+                end if
+                if val(listitem) = baseitem then
+                    ' roll the dice and hope for the best
+                    randomize
+                    baseitem = int(rnd * maxitems) + 1
+                    'print "old item #2" & listitem & " new choice " & baseitem
                 end if
             loop
             close(tmp)
@@ -175,26 +196,27 @@ function listplay (playtype as string, listname as string) as string
     Do Until EOF(tmp)
         Line Input #tmp, listitem
         if itemnr = baseitem then
-            'print "choice  " & itemnr
             currentitem = itemnr
-            ' work around for multiple lists todo improve
-            select case listname
-                case "image"
-                    currentimage = currentitem
-                case "music"
-                    currentsong = currentitem
-                case "slideshow"
-                    currentimage = currentitem
-                case "video"
-                    currentvideo = currentitem
-                case "shader"
-                    currentshader = currentitem
-            end select
-            close(tmp)
-            return listitem
+            exit do
         end if
         itemnr += 1
     Loop
+    close(tmp)
 
-    close
+    ' work around for multiple lists todo improve
+    select case listname
+        case "image"
+            currentimage = currentitem
+        case "music"
+            currentsong = currentitem
+        case "slideshow"
+            currentimage = currentitem
+        case "video"
+            currentvideo = currentitem
+        case "shader"
+            currentshader = currentitem
+    end select
+
+    return listitem
+
 end function
