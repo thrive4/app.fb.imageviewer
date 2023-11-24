@@ -3,13 +3,18 @@ function createlist(folder as string, filterext as string, listname as string) a
     ' setup filelist
     dim chk            as boolean
     redim path(1 to 1) As string
-    dim as integer i = 1, n = 1, f, attrib
+    dim as integer i = 1, n = 1, attrib
+    dim as long f, g
     dim file           as string
     dim fileext        as string
     dim maxfiles       as integer
     f = freefile
     dim filelist as string = exepath + "\" + listname + ".tmp"
     open filelist for output as #f
+
+    g = freefile
+    dim filelistb as string = exepath + "\" + listname + ".lst"
+    open filelistb for output as #g
 
     #ifdef __FB_LINUX__
       const pathchar = "/"
@@ -44,6 +49,7 @@ function createlist(folder as string, filterext as string, listname as string) a
                 fileext = lcase(mid(file, instrrev(file, ".")))
                 if instr(1, filterext, fileext) > 0 and len(fileext) > 3 then 
                     print #f, path(i) & file
+                    print #g, path(i) & file
                     maxfiles += 1
                 else
                     logentry("warning", "file format not supported - " + path(i) & file)
@@ -54,15 +60,12 @@ function createlist(folder as string, filterext as string, listname as string) a
         i += 1
     wend
     close(f)
+    close(g)
 
     ' chk if filelist is created
     if FileExists(filelist) = false then
         logentry("warning", "could not create filelist: " + filelist)
     end if
-    
-    ' setup base shuffle and reduce probability
-    dim lastitem as string = exepath + "\" + listname + ".lst"
-    chk = newfile(lastitem)
     
     return maxfiles
 end function
@@ -70,7 +73,7 @@ end function
 ' used for listplay sets selected item as current
 function setcurrentlistitem(listname as string, filename as string) as integer
     dim listitem as string
-    dim tmp as integer
+    dim tmp as long
     dim itemnr as integer = 1
 
     ' scan for filename in list
@@ -95,15 +98,16 @@ dim shared currentvideo  as integer
 function listplay (playtype as string, listname as string) as string
 
     ' setup item file and item count
-    dim tmp         as integer
     dim chk         as boolean
     Dim listitem    as string
     Dim currentitem as integer
     dim itemnr      as integer = 1
     dim maxitems    as integer = 0
     dim baseitem    as integer
-    dim lastitem    as string = exepath + "\" + listname + ".lst"
+    dim listfile    as string = exepath + "\" + listname + ".lst"
     dim tempfile    as string = exepath + "\" + listname + ".tmp"
+    dim swapfile    as string = exepath + "\" + listname + ".swp"
+    dim as long tmp, swp
 
     ' work around for multiple lists todo improve
     select case listname
@@ -118,6 +122,13 @@ function listplay (playtype as string, listname as string) as string
         case "shader"
             currentitem = currentshader
     end select
+
+    ' reset tempfile if empty
+    if FileLen(tempfile) = 0 then
+        FileCopy listfile, tempfile
+        logentry("notice", "item list reset!")
+    end if
+
     ' count items in list
     tmp = readfromfile(tempfile)
     Do Until EOF(tmp)
@@ -129,52 +140,30 @@ function listplay (playtype as string, listname as string) as string
     ' note linefeed at end of list caused by pipelinig on os
     maxitems = itemnr - 1 
     itemnr = 1
-
-    ' count items in list lastitem wipe when equal to maxitems
-    tmp = readfromfile(lastitem)
-    Do Until EOF(tmp)
-        Line Input #tmp, listitem
-        itemnr += 1
-    Loop
-    close(tmp)
-    if itemnr > maxitems then
-        If Kill(lastitem) <> 0 Then
-            logentry("error", "deleteing " + lastitem)
-        end if
-        chk = newfile(lastitem)
-        logentry("notice", "item list reset!")
-    end if
-    itemnr = 1
     select case playtype
         case "shuffle"
             ' choose an item
             randomize
             baseitem = int(rnd * maxitems) + 1
-            ' fill lastitem list and check if item is already used
-            tmp = readfromfile(lastitem)
-            Do Until EOF(tmp)
-                Line Input #tmp, listitem
-                ' check if already chosen reduce probabilty clunky but works....
-                if val(listitem) = baseitem then
-                    ' roll the dice and hope for the best
-                    randomize
-                    baseitem = int(rnd * maxitems) + 1
-                    'print "old item #1" & listitem & " new choice " & baseitem
-                end if
-                if val(listitem) = baseitem then
-                    ' roll the dice and hope for the best
-                    randomize
-                    baseitem = int(rnd * maxitems) + 1
-                    'print "old item #2" & listitem & " new choice " & baseitem
-                end if
-            loop
-            close(tmp)
-            chk = appendfile(lastitem, str(baseitem))
+            swp = 20
+            open swapfile for output as swp
+                tmp = readfromfile(tempfile)
+                Do Until EOF(tmp)
+                    Line Input #tmp, listitem
+                    if baseitem <> itemnr then
+                        print  #20, listitem
+                    else
+                        ' nop
+                    end if
+                    itemnr += 1
+                Loop
+                close(tmp)
+            close (swp)
         case "linear"
             baseitem = 1
             currentitem = currentitem + 1
             baseitem = currentitem
-            ' wrap to first image
+            ' wrap to first item
             if currentitem > maxitems then
                 baseitem = 1
             end if
@@ -184,7 +173,7 @@ function listplay (playtype as string, listname as string) as string
                 currentitem = currentitem - 1
                 baseitem = currentitem
             end if
-            ' wrap to last image
+            ' wrap to last item
             if currentitem = 0 then
                 currentitem = maxitems
                 baseitem = currentitem
@@ -193,15 +182,20 @@ function listplay (playtype as string, listname as string) as string
 
     ' get specific item from list
     tmp = readfromfile(tempfile)
+    dim dummy as string
+    itemnr = 1
     Do Until EOF(tmp)
         Line Input #tmp, listitem
         if itemnr = baseitem then
             currentitem = itemnr
-            exit do
+            dummy = listitem
         end if
         itemnr += 1
     Loop
     close(tmp)
+    if playtype = "shuffle" then
+        FileCopy swapfile, tempfile
+    end if
 
     ' work around for multiple lists todo improve
     select case listname
@@ -217,6 +211,6 @@ function listplay (playtype as string, listname as string) as string
             currentshader = currentitem
     end select
 
-    return listitem
+    return dummy
 
 end function

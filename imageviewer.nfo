@@ -1,3 +1,14 @@
+update v1.5 24/11/2023
+- corrected freefile variable type to long
+  integer causes issues when opening multiple
+  file in succession
+- trimmed utilfile.bas
+- reworked shuffleplay...again... should now
+  work as intended; only play a item in the set once
+  untill the set is exhausted.
+- added dutch (nl) as locale
+- tidy up conf.ini
+
 update v1.4 28/10/2023
 - fixed log creation (missing message)
 - fixed appname made truncation .exe optional

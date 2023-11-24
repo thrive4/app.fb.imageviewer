@@ -10,6 +10,14 @@ imageviewer.exe "path to file or folder"\
 imageviewer.exe "path to file or folder" fullscreen\
 if no file or path is specified the current dir will be scanned for an image\
 if the folder has subfolder(s) these will be scanned for images as well
+## configuration
+basic config options in conf.ini\
+locale          = <en, de, fr, nl>\
+[screensaver]\
+' time passed before screensaver starts in seconds\
+screensaveinterval = 180\
+' options dimscreen\
+screensavetype = dimscreen
 ## requirements
 sdl2 (32bit) v2.24.2.0\
 https://github.com/libsdl-org/SDL/releases

@@ -78,7 +78,7 @@ Function logentry(entrytype As String, logmsg As String) As Boolean
     end if
 
     ' setup logfile
-    dim f as integer
+    dim f as long
     f = FreeFile
     logfile = exepath + "\" + appname + ".log"
     if FileExists(logfile) = false then
@@ -185,7 +185,7 @@ end function
 
 ' create a new file
 Function newfile(filename As String) As boolean
-    Dim f As integer
+    Dim f As long
 
     if FileExists(filename) then
         logentry("warning", "creating " + filename + " file excists")
@@ -202,7 +202,7 @@ End Function
 
 ' create a temp file
 Function tmpfile(filename As String) As boolean
-    Dim f As integer
+    Dim f As long
 
     if FileExists(filename) = true then
       If Kill(filename) <> 0 Then
@@ -220,7 +220,7 @@ End Function
 
 ' append to an excisiting file
 Function appendfile(filename As String, msg as string) As boolean
-    Dim f As integer
+    Dim f As long
 
     if FileExists(filename) = false then
         logentry("error", "appending " + filename + " file does not excist")
@@ -237,7 +237,7 @@ End Function
 
 ' read a file
 Function readfromfile(filename As String) As long
-    Dim f As integer
+    Dim f As long
 
     if FileExists(filename) = false then
         logentry("error", "reading " + filename + " file does not excist")
@@ -285,7 +285,7 @@ End Function
 dim locale as string = "en"
 sub displayhelp(locale as string)
     dim dummy as string
-    dim f     as integer
+    dim f     as long
     f = freefile
 
     ' get text
@@ -300,7 +300,7 @@ sub displayhelp(locale as string)
         Line Input #f, dummy
         print wstr(dummy)
     Loop
-    close f
+    close(f)
 
 end sub
 
@@ -342,7 +342,7 @@ Function readuilabel(filename as string) as boolean
             record.fieldvalue(recnr) = inival
         end if
     loop
-    close f
+    close(f)
     return true
 end function
 
@@ -371,199 +371,13 @@ end function
 ' file type specific functions
 ' ______________________________________________________________________________'
 
-' cheap xml reading
-Function readxmlfile(filename as string, element as string) As boolean
-
-    Dim f As integer
-    dim as boolean chk = false
-
-    if FileExists(filename) = false then
-        logentry("error", "reading " + filename + " file does not excist")
-    end if
-
-    f = FreeFile
-    Open filename For input As #f
-    logentry("notice", filename + " reading")
-
-    Do Until EOF( f )
-       Dim As String text
-       Line Input #f, text
-       if instr(text, "<" + element + ">") > 0 then
-            Print text
-            chk = true
-       end if     
-    Loop
-
-    if chk = false then 
-        logentry("warning", filename + " searching for " + element + " element not found")
-    end if
-    
-    return true
-    
-end function
-
-' cheap xml query by node
-Function queryxmlbynode(filename as string, queryelement as string, needle as string, returnelement as string) As boolean
-
-    Dim f As integer
-    dim as boolean chk = false
-    dim dummy as string
-    
-    if FileExists(filename) = false then
-        logentry("error", "reading " + filename + " file does not excist")
-    end if    
-
-    f = FreeFile
-    Open filename For input As #f
-    logentry("notice", filename + " reading")
-  
-    Do Until EOF( f )
-       Dim As String text
-       Line Input #f, text
-       if instr(text, "<" + queryelement + ">") > 0 then
-            'print mid(text, instr(text, ">") + 1)
-            dummy = mid(left(text, len(text) - len("</" + queryelement + ">")), instr(text, ">")+1)
-            if dummy = needle then
-                print "found needle " + needle
-                logentry("notice", filename + " searching for " + needle + " found")
-                'exit do
-                chk = true
-            end if    
-       end if
-       if instr(text, "<" + returnelement + ">") > 0 then
-            dummy = mid(left(text, len(text) - len("</" + returnelement + ">")), instr(text, ">")+1)
-            if chk = true then
-                print dummy
-                'launchapp (dummy, "wah")
-                exit do
-            end if
-        end if    
-    Loop
-
-    if chk = false then
-        print filename + " searching " + queryelement + " for " + needle + " needle not found"
-        logentry("warning", filename + " searching " + queryelement + " for " + needle + " needle not found")
-    end if
-    
-    return true
-    
-end function
-
-' cheap xml to sqlite
-Function xml2sql(filename as string, dbname as string, tbname as string) As boolean
-
-    Dim f As integer
-    dim as boolean chk = false
-    dim as long recnr = 0
-    
-    if FileExists(filename) = false then
-        logentry("error", "reading " + filename + " file does not excist")
-    end if    
-
-    f = FreeFile
-    Open filename For input As #f
-    logentry("notice", filename + " reading")
-  
-    Do Until EOF( f )
-       Dim As String text
-       Line Input #f, text
-       if instr(text, "<" + dbname + ">") > 0 then
-            chk = true
-            do until eof(f)
-                Line Input #f, text
-                if instr(text, "<" + tbname + ">") > 0 then
-                    do until eof(f)
-                        Line Input #f, text
-                        if instr(text, "</" + tbname + ">") = 0 then
-                            print text
-                        else
-                            print "----"
-                            recnr = recnr+1
-                            exit do                                
-                        end if
-                    loop
-                end if    
-            loop
-       end if     
-    Loop
-
-    if chk = false then 
-        logentry("warning", filename + " not found " + dbname + " and / or " + tbname)
-    else
-        Print "db " + dbname
-        print "tb " + tbname
-        print "records " & recnr    
-    end if
-    
-    return true
-    
-end function
-
-' cheap ini file searcher
-Function readinikeyvalue( filename as string, section as string, inikey as string ) as boolean
-
-    if FileExists(filename) = false then
-        logentry("error", "reading " + filename + " file does not excist")
-    end if    
-
-    Dim f As integer
-    Dim text As String
-
-    f = FreeFile
-    Open filename For input As #f
-    logentry("notice", filename + " searching" + " with section " + section + " for key " + inikey)
-
-    Do Until EOF(f)
-        Line Input #f, text
-        ' check if section is found in the current line
-        If LCase( text ) = "[" & LCase( section ) & "]" Then
-            ' parse lines until the next section is reached
-            Do until eof(f)
-                Line Input #f, text
-                if instr(text, inikey + "=") > 0 then
-                    if mid(text, instr(text, "=") + 1, 1) = "" then
-                        logentry("warning", filename + " searching" + " with section " + section + " with key " + inikey + " key value is blank")
-                    else                      
-                        print text
-                    end if    
-                end if
-                if Left( text, 1 ) = "[" then
-                    exit do
-                end if    
-            'logentry("warning", filename + " searching" + " with section " + section + "key not found")
-            Loop
-        end if
-    Loop
-    'logentry("notice", filename + " searching" + " with section " + section + " not found")
-
-    return true
-End Function
-
-' cheap ini file reader
-Function readini(filename as string) as boolean
-    dim itm    as string
-    dim inikey as string
-    dim inival as string
-    dim f      as integer
-    f = readfromfile(filename)
-    Do Until EOF(f)
-        Line Input #f, itm
-        if instr(1, itm, "=") > 1 then
-            inikey = trim(mid(itm, 1, instr(1, itm, "=") - 2))
-            inival = trim(mid(itm, instr(1, itm, "=") + 2, len(itm)))
-            'print inikey + " - " + inival
-        end if    
-    loop    
-    close f
-return true
-end function
-
 ' code by squall4226
 ' see https://www.freebasic.net/forum/viewtopic.php?p=149207&hilit=user+need+TALB+for+album#p149207
 Function getmp3tag(searchtag As String, fn As String) As String
    'so we can avoid having the user need TALB for album, TIT2 for title etc, although they are accepted
    Dim As Integer skip, offset' in order to read certain things right
-   Dim As UInteger sig_to_find, count, fnum, maxcheck = 100000
+   Dim As UInteger sig_to_find, count, maxcheck = 100000
+   dim as long fnum
    dim as UShort tag_length
    Dim As UShort unitest, mp3frametest
    Dim As String tagdata
@@ -663,7 +477,7 @@ Function getmp3cover(filename As String) As boolean
     dim bend    as integer
     dim ext     as string = ""
     dim thumb   as string
-    dim f       as integer
+    dim f       as long
     f = freefile
     ' remove old thumb if present
     delfile(exepath + "\thumb.jpg")
@@ -893,23 +707,6 @@ Function explode(haystack As String = "", delimiter as string, ordinance() As St
 
 End Function
 
-' setup word wrap string
-type stringwrap
-    as integer  linecnt     ' current line
-    as integer  linemax     ' max viewable lines
-    as integer  linelength  ' max line length
-    as integer  wrapcharpos ' position to wrap on with wrapchar
-    as string   wrapchar    ' wrap character , . etc
-    as string   lineitem    ' line content
-    as string   linetemp    ' temp line when wraping
-end type
-
-dim swp as stringwrap
-swp.linecnt    = 1
-swp.linemax    = 10
-swp.linelength = 70
-swp.wrapchar   = " ,.?;-"
-
 function replace(byref haystack as string, byref needle as string, byref substitute as string) as string
 'found at https://freebasic.net/forum/viewtopic.php?f=2&t=9971&p=86259&hilit=replace+character+in+string#p86259
     dim as string temphaystack = haystack
@@ -922,71 +719,5 @@ function replace(byref haystack as string, byref needle as string, byref substit
     wend
 
     return temphaystack
-
-end function
-
-function wordwrap2file(filename as string, swp as stringwrap) as boolean
-    dim dummy as string
-    dim j as integer = 0
-    dim i as integer = 1
-    dim f as integer
-    dim g as integer
-    f = freefile
-
-    open filename for input as #f
-    open exepath + "\text.tmp" for output as #20
-    do until eof(f)
-        line input #f, swp.lineitem
-        j = 0
-        swp.linetemp = ""
-        'cleanup string tab, etc
-        swp.lineitem = replace(swp.lineitem, chr$(9), "")
-        swp.lineitem = replace(swp.lineitem, "  ", " ")
-
-        ' ghetto latin-1 support
-        swp.lineitem = replace(swp.lineitem, chr$(130), ",")
-        swp.lineitem = replace(swp.lineitem, chr$(132), chr$(34))
-        swp.lineitem = replace(swp.lineitem, chr$(139), "<")
-        swp.lineitem = replace(swp.lineitem, chr$(145), "'")
-        swp.lineitem = replace(swp.lineitem, chr$(146), "'")
-        swp.lineitem = replace(swp.lineitem, chr$(147), chr$(34))
-        swp.lineitem = replace(swp.lineitem, chr$(148), chr$(34))
-        swp.lineitem = replace(swp.lineitem, chr$(150), "-")
-        swp.lineitem = replace(swp.lineitem, chr$(152), "~")
-
-        if len(swp.lineitem) > swp.linelength then
-            do while j <= fix(len(swp.lineitem) / swp.linelength)
-                i = 1
-                dummy = mid(swp.lineitem, j * swp.linelength + 1, swp.linelength)
-                ' move wrappos to pos wrapchar instead of linelength if possible
-                do while i <= len(swp.wrapchar)
-                    swp.wrapcharpos = instrrev (mid(dummy, 1, swp.linelength), mid(swp.wrapchar, i, 1))
-                    if  swp.linelength <= swp.wrapcharpos + len(mid(dummy, swp.wrapcharpos, len(dummy))) then
-                        exit do
-                    end if
-                    i += 1
-                loop
-                ' special case no wrapchar
-                if swp.wrapcharpos > 0 then
-                    swp.linetemp = swp.linetemp + mid(dummy, 1, swp.wrapcharpos) + chr$(13) + chr$(10)_
-                                    + trim(mid(dummy, swp.wrapcharpos, len(dummy)))
-                else
-                    ' note just chr$(13) truncates linetemp
-                    swp.linetemp = swp.linetemp + dummy + chr$(13) + chr$(10)
-                end if
-                j += 1
-                ' brute force paragraphs
-                'if swp.linecnt > swp.linemax then
-                '    swp.linetemp = swp.linetemp + chr$(13) + chr$(10) + chr$(13) + chr$(10)
-                '    swp.linecnt = 1
-                'end if        
-                swp.linecnt += 1
-            loop
-            swp.lineitem = swp.linetemp
-        end if
-        print #20, swp.lineitem
-    loop
-    close
-    return true
 
 end function

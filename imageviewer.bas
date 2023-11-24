@@ -82,7 +82,7 @@ dim itm     as string
 dim inikey  as string
 dim inival  as string
 dim inifile as string = exepath + "\conf\conf.ini"
-dim f as integer
+dim f as long
 if FileExists(inifile) = false then
     logentry("error", inifile + "file does not excist")
 else 
@@ -678,6 +678,7 @@ cleanup:
 ' cleanup listplay files
 delfile(exepath + "\" + "image" + ".tmp")
 delfile(exepath + "\" + "image" + ".lst")
+delfile(exepath + "\" + "image" + ".swp")
 delfile(exepath + "\thumb.jpg")
 delfile(exepath + "\thumb.png")
 
