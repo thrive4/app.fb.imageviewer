@@ -1,3 +1,28 @@
+update v1.6 19/11/2024
+- rewrite commandline handling
+- cleanup conf.ini removed unused settings
+- added default imagefolder in conf.ini
+- added generate m3u by searching on one tag
+  artist, title, album, genre and year
+  slideshow <audiosource> <tag> <tagquery>
+  example: slideshow.exe g:\data\mp3\classic artist beethoven
+  generates the m3u file beethoven.m3u
+  which then can be played by slideshow.exe beethoven.m3u
+  notes:
+  * simple search so 195 is equivalent of ?195? or *195*
+  * runtime in seconds is not calculated default is #EXTINF:134
+  * no explicit wildcard support
+- trimmed utilfile.bas and added resolvepath for commanline argument
+- regression checkpath (see 1.4) fixed again
+- update sdl2 from 2.26.5.0 to 2.30.9.0
+- update sdl_image from 2.6.3.0 to 2.8.2.0
+- remove .tff should be .tif or .tiff but needs seperate libtiff-5.dll
+- avif, tiff, webp and jxl need seperate dll's
+- for now remove support but keep jxl on the todo list
+- info .webp support see: https://en.wikipedia.org/wiki/WebP
+- info .jxl support aka jpeg XL see: https://jpegxl.info/
+- slimmed down function explode
+
 update v1.5 24/11/2023
 - corrected freefile variable type to long
   integer causes issues when opening multiple

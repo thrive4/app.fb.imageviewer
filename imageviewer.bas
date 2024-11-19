@@ -2,7 +2,7 @@
 ' Translated to FreeBASIC by Michael "h4tt3n" Schmidt Nissen, march 2017
 ' http://www.willusher.io/sdl2%20tutorials/2013/08/18/lesson-3-sdl-extension-libraries
 ' tweaked for fb and sdl2 sept 2022 by thrive4
-' supported image formats .bmp, .gif, .jpg, .mp3, .png, .pcx, .jpeg, .tff, .webp
+' supported image formats .bmp, .gif, .jpg, .mp3, .png, .pcx, .jpeg, .svg, .gls
 
 #include once "SDL2/SDL.bi"
 #include once "SDL2/SDL_image.bi"
@@ -23,6 +23,7 @@ dim desktoph        as integer
 dim desktopr        as integer
 dim rotateimage     as SDL_RendererFlip = SDL_FLIP_NONE
 dim rotateangle     as double = 0
+dim locale          as string = "en"
 
 'zoomtype options stretch, scaled, zoomsmallimage
 dim zoomtype        as string = "zoomsmallimage"
@@ -37,11 +38,10 @@ ScreenInfo desktopw, desktoph,,,desktopr
 dim filename    as string
 dim fileext     as string = ""
 dim imagefolder as string
-dim imagetypes  as string = ".bmp, .gif, .jpg, .mp3, .png, .pcx, .jpeg, .svg, .tff" 
+dim imagetypes  as string = ".bmp, .gif, .jpg, .mp3, .png, .pcx, .jpeg, .svg" 
 dim playtype    as string = "linear"
 
 ' screensaver
-'dim screensavepath     as string  = backgroundpath
 dim screensaveinterval as integer = 30 * 1000 ' in seconds
 dim screensaveactive   as boolean = false
 dim screensaveinittime as integer = 0
@@ -82,7 +82,7 @@ dim itm     as string
 dim inikey  as string
 dim inival  as string
 dim inifile as string = exepath + "\conf\conf.ini"
-dim f as long
+dim f       as long
 if FileExists(inifile) = false then
     logentry("error", inifile + "file does not excist")
 else 
@@ -111,8 +111,10 @@ else
                         usecons = inival
                     case "logtype"
                         logtype = inival
-                    case "kback"
-                        ' nop
+                    case "imagefolder"
+                        imagefolder = inival
+                    case "playtype"
+                        playtype = inival
                     case "screensaveinterval"
                         screensaveinterval = val(inival) * 1000
                         if screensaveinterval = 0 or screensaveinterval <= 10000 then
@@ -130,59 +132,98 @@ else
     close(f)    
 end if    
 
-select case command(2)
-    case "/?", "-man", ""
+' parse commandline
+select case command(1)
+    case "/?", "-h", "-help", "-man"
         displayhelp(locale)
-    case "fullscreen"
-        screenwidth  = desktopw
-        screenheight = desktoph
-        fullscreen = true
-    case ""
-        ' no switch    
-        'displayhelp
+        goto cleanup
+    case "-v", "-ver"
+        consoleprint appname + " version " & exeversion 
+        goto cleanup
 end select
 
-' get images if applicable override first image with preferd a specific image
-imagefolder = command(1)
-if instr(command(1), ".") <> 0 then
-    fileext = lcase(mid(command(1), instrrev(command(1), ".")))
+dummy = resolvepath(command(1))
+if instr(dummy, ".") <> 0 and instr(dummy, "..") = 0 and instr(dummy, ".m3u") = 0 then
+    fileext = lcase(mid(dummy, instrrev(dummy, ".")))
     if instr(1, imagetypes, fileext) = 0 then
-        logentry("fatal", command(1) + " file type not supported")
+        logentry("fatal", dummy + " file type not supported")
     end if
-    if FileExists(exepath + "\" + command(1)) = false then
-        if FileExists(imagefolder) then
-            'nop
-        else
-            logentry("fatal", imagefolder + " does not excist or is incorrect")
-        end if
-    else
-        imagefolder = exepath + "\" + command(1)
-    end if
-    filename = command(1)    
-    imagefolder = left(command(1), instrrev(command(1), "\") - 1)
+    imagefolder = left(dummy, instrrev(dummy, "\") - 1)
     chk = createlist(imagefolder, imagetypes, "image")
-    currentimage = setcurrentlistitem("image", filename)
+    currentimage = setcurrentlistitem("slideshow", dummy)
+    'currentimage -= 1
 else
-    if instr(command(1), ":") <> 0 then
-        imagefolder = command(1)
+    ' specific path
+    if instr(dummy, "\") <> 0 and instr(dummy, ".m3u") = 0  then
+        imagefolder = dummy
         if checkpath(imagefolder) = false then
-            logentry("fatal", "error: path not found " + imagefolder)
+            logentry("fatal",  "error: path not found " + imagefolder)
         else
             chk = createlist(imagefolder, imagetypes, "image")
+            if chk = false then
+                logentry("fatal", "error: no displayable files found")
+            end if
             filename = listplay(playtype, "image")
         end if
     ELSE
-        imagefolder = exepath
-        chk = createlist(imagefolder, imagetypes, "image")
-        filename = listplay(playtype, "image")
-        if chk = false then
-            dummy = "no displayable files found"
-            print dummy    
-            logentry("notice", dummy)
-            goto cleanup
+        ' fall back to path imagefolder specified in conf.ini
+        if checkpath(imagefolder) = false then
+            logentry("warning", "error: path not found " + imagefolder)
+            ' try scanning exe path
+            imagefolder = exepath
         end if
+        chk = createlist(imagefolder, imagetypes, "image")
+        if chk = false then
+            logentry("fatal", "error: no displayable files found")
+        end if
+        filename = listplay(playtype, "image")
     end if
 end if
+if command(2) = "fullscreen" or command(4) = "fullscreen" then
+    screenwidth  = desktopw
+    screenheight = desktoph
+    fullscreen = true
+end if 
+
+' setup parsing pls and m3u
+dim maxitems        as integer
+
+' use .m3u as slideshow coverart mp3s
+if instr(dummy, ".m3u") <> 0 then
+    if FileExists(dummy) then
+        'nop
+    else
+        logentry("fatal", dummy + " file does not excist or possibly use full path to file")
+    end if
+    maxitems = getmp3playlist(dummy, "image")
+    filename = listplay(playtype, "image")
+    logentry("notice", "parsing and playing playlist " + filename)
+end if
+
+' search with query and export .m3u 
+if instr(dummy, ":") <> 0 and len(command(2)) <> 0 and command(2) <> "fullscreen" then
+    select case command(2)
+        case "artist"
+        case "title"
+        case "album"
+        case "year"
+        case "genre"
+        case else
+            delfile(exepath + "\" + "image" + ".tmp")
+            delfile(exepath + "\" + "image" + ".lst")
+            delfile(exepath + "\" + "image" + ".swp")
+            logentry("fatal", "unknown tag '" & command(2) & "' valid tags artist, title, album, genre and year")
+    end select
+    ' scan and search nr results overwritten by getmp3playlist
+    maxitems = exportm3u(dummy, "*.mp3", "m3u", "exif", command(2), command(3))
+    maxitems = getmp3playlist(exepath + "\" + command(3) + ".m3u", "image")
+    filename = listplay(playtype, "image")
+    currentsong = setcurrentlistitem("image", filename)
+    if currentsong = 1 then
+        logentry("fatal", "no matches found for " + command(3) + " in " + command(2))
+    end if
+end if
+dummy = ""
 
 ' check and get mp3 cover art
 sub checkmp3cover(byref filename as string)
@@ -674,6 +715,14 @@ while running
     end if
 wend
 
+'cleanup sdl
+SDL_DestroyTexture(background_surface)
+SDL_DestroyRenderer(renderer)
+SDL_DestroyWindow(glass)
+IMG_Quit()
+SDL_Quit()
+close
+
 cleanup:
 ' cleanup listplay files
 delfile(exepath + "\" + "image" + ".tmp")
@@ -682,13 +731,4 @@ delfile(exepath + "\" + "image" + ".swp")
 delfile(exepath + "\thumb.jpg")
 delfile(exepath + "\thumb.png")
 
-'cleanup background, image, renderer, glass
-if chk Then
-    SDL_DestroyTexture(background_surface)
-    SDL_DestroyRenderer(renderer)
-    SDL_DestroyWindow(glass)
-    IMG_Quit()
-    SDL_Quit()
-end if
-close
 logentry("terminate", "normal termination " + appname)

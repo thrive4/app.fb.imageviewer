@@ -1,9 +1,10 @@
 ' used for app launcher
 #include once "crt/process.bi"
-
 ' dir function and provides constants to use for the attrib_mask parameter
 #include once "vbcompat.bi"
 #include once "dir.bi"
+' for printf
+#include once "crt/stdio.bi"
 
 ' disable filename globbing otherwise g:\* list files
 ' when using command how ever conflicts with dir()
@@ -60,6 +61,38 @@ os = "unknown"
     os = "unix"
 #endif
 
+' allows for hybrid usage console feedback when app is compiled in -gui mode
+' courtesy https://stackoverflow.com/questions/510805/can-a-win32-console-application-detect-if-it-has-been-run-from-the-explorer-or-n
+' comment bobsobol
+function consoleprint(msg as string, forcewstr as boolean = false) as boolean
+
+    if AttachConsole(ATTACH_PARENT_PROCESS) THEN ' gui mode
+        Shell("Cls")
+		freopen( "CON", "r", stdin )
+		freopen( "CON", "w", stdout )
+		freopen( "CON", "w", stderr )
+        ' sigh work around msg = wstr(msg) does not work ....
+        ' also todo figure out printf with wstr
+        if forcewstr then
+            print wstr(msg)
+        else
+            printf(msg)
+        end if
+        ' restore the normal prompt in cmd console
+        freeconsole()
+		PostMessage(GetForegroundWindow, WM_KEYDOWN, VK_RETURN, 0)
+    else
+        if forcewstr then
+            print wstr(msg)
+        else
+            print msg
+        end if
+    END IF
+
+    return true
+
+end function
+
 ' metric functions
 ' ______________________________________________________________________________'
 
@@ -74,7 +107,7 @@ Function logentry(entrytype As String, logmsg As String) As Boolean
 
     ' output to console
     if usecons = "true" then
-        print time & " " + entrytype + " | " + logmsg
+        consoleprint time & " " + entrytype + " | " + logmsg
     end if
 
     ' setup logfile
@@ -101,7 +134,7 @@ Function logentry(entrytype As String, logmsg As String) As Boolean
     ' normal termination or fatal error
     select case entrytype
         case "fatal"
-            print logmsg
+            consoleprint logmsg
             end
         case "terminate"
             end
@@ -200,24 +233,6 @@ Function newfile(filename As String) As boolean
 
 End Function
 
-' create a temp file
-Function tmpfile(filename As String) As boolean
-    Dim f As long
-
-    if FileExists(filename) = true then
-      If Kill(filename) <> 0 Then
-          logentry("warning", "could not delete " + filename )
-      end if
-    end if
-
-    f = FreeFile
-    Open filename For output As #f
-    logentry("notice", filename + " created")
-    close(f)
-    return true
-
-End Function
-
 ' append to an excisiting file
 Function appendfile(filename As String, msg as string) As boolean
     Dim f As long
@@ -274,16 +289,34 @@ Function checkpath(chkpath As String) As boolean
         return false
     end if
 
+    chdir(dummy)
     return true
 
 End Function
+
+' resolve path commandline argument
+Function resolvepath(path As String) As String
+
+    Dim buffer        as String * 260
+    dim resolvedpath  as string
+    Dim length        as Integer 
+    length = GetFullPathName(path, 260, buffer, Null)
+
+    resolvedpath = Left(buffer, length)
+    if checkpath(resolvedpath) = false and instr(path, "..") = 0 then
+        resolvedpath = path
+    end if  
+
+    return resolvedpath
+
+end function
 
 ' localization file functions
 ' ______________________________________________________________________________'
 
 ' localization can be applied by getting a locale or other method
-dim locale as string = "en"
 sub displayhelp(locale as string)
+    dim item  as string
     dim dummy as string
     dim f     as long
     f = freefile
@@ -297,11 +330,11 @@ sub displayhelp(locale as string)
     end if
     Open exepath + "\conf\" + locale + "\help.ini" For input As #f
     Do Until EOF(f)
-        Line Input #f, dummy
-        print wstr(dummy)
+        Line Input #f, item
+        dummy = dummy + item + chr$(13) + chr$(10)
     Loop
     close(f)
-
+    consoleprint (dummy, true)
 end sub
 
 ' setup ui labels aka data spindel
@@ -376,7 +409,7 @@ end function
 Function getmp3tag(searchtag As String, fn As String) As String
    'so we can avoid having the user need TALB for album, TIT2 for title etc, although they are accepted
    Dim As Integer skip, offset' in order to read certain things right
-   Dim As UInteger sig_to_find, count, maxcheck = 100000
+   Dim As UInteger sig_to_find, count, maxcheck = 3000
    dim as long fnum
    dim as UShort tag_length
    Dim As UShort unitest, mp3frametest
@@ -565,116 +598,205 @@ Function getmp3cover(filename As String) As boolean
     end if
 end function
 
-' MD5 encrypt from the Wikipedia page "MD5"
-' compile with: fbc -s console
-' from https://rosettacode.org/wiki/MD5/Implementation#FreeBASIC
-' note md5 is not reversible, at least it shouldn't be...
-' added basic file i/o thrive4 2022
+' get base mp3 info
+dim shared taginfo(1 to 5) as string
+function getmp3baseinfo(fx1File as string) as boolean
+    taginfo(1) = getmp3tag("artist",fx1File)
+    taginfo(2) = getmp3tag("title", fx1File)
+    taginfo(3) = getmp3tag("album", fx1File)
+    taginfo(4) = getmp3tag("year",  fx1File)
+    taginfo(5) = getmp3tag("genre", fx1File)
+    if taginfo(1) <> "----" and taginfo(2) <> "----" then
+        'nop
+    else    
+        taginfo(1) = mid(left(fx1File, len(fx1File) - instr(fx1File, "\") -1), InStrRev(fx1File, "\") + 1, len(fx1File))
+        taginfo(2) = ""
+    end if                
+    return true
+end function
 
-' macro for a rotate left
-#Macro ROtate_Left (x, n) ' rotate left
-  (x) = (x) Shl (n) + (x) Shr (32 - (n))
-#EndMacro
+function getmp3playlist(filename as string, listname as string) as integer
+    dim              as long f, g, h
+    dim itemnr       as integer = 1
+    dim listitem     as string
+    dim listduration as integer
+    dim mp3listtype  as string = ""
+    f = freefile
 
-Function MD5(test_str As String) As String
+    select case true  
+        case instr(filename, ".pls") > 0
+            mp3listtype = "pls"
+        case instr(filename, ".m3u") > 0
+            mp3listtype = "m3u"
+        case else
+            return 0
+    end select    
 
-    Dim As String message = test_str   ' strings are passed as ByRef's
+    if len(filename) = 0 then
+        logentry("warning", filename + " path or file not found.")
+    else
+        logentry("notice", "parsing and playing plylist " + filename)
+    end if
+    Open filename For input As #f
+    g = freefile
+    open exepath + "\" + listname + ".tmp" for output as #g
+    h = freefile
+    open exepath + "\" + listname + ".lst" for output as #h
+    itemnr = 0
 
-    Dim As UByte sx, s(0 To ...) = { 7, 12, 17, 22,  7, 12, 17, 22,  7, 12, _
-    17, 22,  7, 12, 17, 22,  5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20, _
-    5,  9, 14, 20,  4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23,  4, 11, _
-    16, 23,  6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21 }
+    Do Until EOF(f)
+        Line Input #f, listitem
+        ' ghetto parsing pls
+        if mp3listtype = "pls" then
+            if instr(listitem, "=") > 0 then
+                select case true
+                    case instr(listitem, "file") > 0
+                        print #g, mid(listitem, instr(listitem, "=") + 1, len(listitem))
+                        print #h, mid(listitem, instr(listitem, "=") + 1, len(listitem))
+                        itemnr += 1
+                    case instr(listitem, "title" + str(itemnr)) > 0
+                    case instr(listitem, "length" + str(itemnr)) > 0
+                        listduration = listduration + val(mid(listitem, instr(listitem, "=") + 1, len(listitem)))
+                    case len(listitem) = 0
+                        'nop
+                    case else
+                        'msg64 = msg64 + listitem
+                end select
+            end if
+        end if
+        ' ghetto parsing m3u
+        if mp3listtype = "m3u" then
+            ' ghetto parsing m3u
+            if len(listitem) > 0 then
+                select case true
+                    case instr(listitem, "EXTINF:") > 0
+                        listduration = listduration + val(mid(listitem, instr(listitem, ":") + 1, len(instr(listitem, ","))- 1))
+                    case instr(listitem, ".") > 0
+                        print #g, listitem
+                        print #h, listitem
+                        itemnr += 1
+                    case len(listitem) = 0
+                        'nop
+                    case else
+                        'msg64 = msg64 + listitem
+                end select
+            end if
+        end if
+    Loop
+    'maxmusicitems = itemnr
+    close(f)
+    close(g)
+    close(h)
+    return itemnr
 
-    Dim As UInteger<32> K(0 To ...) = { &Hd76aa478, &He8c7b756, &H242070db, _
-    &Hc1bdceee, &Hf57c0faf, &H4787c62a, &Ha8304613, &Hfd469501, &H698098d8, _
-    &H8b44f7af, &Hffff5bb1, &H895cd7be, &H6b901122, &Hfd987193, &Ha679438e, _
-    &H49b40821, &Hf61e2562, &Hc040b340, &H265e5a51, &He9b6c7aa, &Hd62f105d, _
-    &H02441453, &Hd8a1e681, &He7d3fbc8, &H21e1cde6, &Hc33707d6, &Hf4d50d87, _
-    &H455a14ed, &Ha9e3e905, &Hfcefa3f8, &H676f02d9, &H8d2a4c8a, &Hfffa3942, _
-    &H8771f681, &H6d9d6122, &Hfde5380c, &Ha4beea44, &H4bdecfa9, &Hf6bb4b60, _
-    &Hbebfbc70, &H289b7ec6, &Heaa127fa, &Hd4ef3085, &H04881d05, &Hd9d4d039, _
-    &He6db99e5, &H1fa27cf8, &Hc4ac5665, &Hf4292244, &H432aff97, &Hab9423a7, _
-    &Hfc93a039, &H655b59c3, &H8f0ccc92, &Hffeff47d, &H85845dd1, &H6fa87e4f, _
-    &Hfe2ce6e0, &Ha3014314, &H4e0811a1, &Hf7537e82, &Hbd3af235, &H2ad7d2bb, _
-                                                              &Heb86d391 }
+end function
 
-    ' Initialize variables
-    Dim As UInteger<32> A, a0 = &H67452301
-    Dim As UInteger<32> B, b0 = &Hefcdab89
-    Dim As UInteger<32> C, c0 = &H98badcfe
-    Dim As UInteger<32> D, d0 = &H10325476
-    Dim As UInteger<32> dtemp, F, g, temp
+' export m3u
+' based on recursive dir code of coderjeff https://www.freebasic.net/forum/viewtopic.php?t=5758
+function exportm3u(folder as string, filterext as string, listtype as string = "m3u", htmloutput as string = "default", tag as string = "", tagquery as string = "") as integer
+    ' setup filelist
+    dim                as integer i = 1, j=1, n = 1, attrib, itemnr, maxfiles
+    dim                as long tmp
+    dim dummy          as string
+    dim dummy2         as string
+    dim tbname         as string
+    dim file           as string
+    dim fileext        as string
+    dim fsize          as long
+    dim fdate          as string
+    dim fattr          as string
+    dim argc(0 to 5)   as string
+    dim argv(0 to 5)   as string
 
-    Dim As Long i, j
+    redim path(1 to 1) As string
+    'export to m3u
+    Open exepath + "\" + tagquery + ".m3u" For output As #20
+    print #20, "#EXTM3U"
 
-    Dim As ULongInt l = Len(message)
-    ' set the first bit after the message to 1
-    message = message + Chr(1 Shl 7)
-    ' add one char to the length
-    Dim As ULong padding = 64 - ((l +1) Mod (512 \ 8)) ' 512 \ 8 = 64 char.
+    #ifdef __FB_LINUX__
+      const pathchar = "/"
+    #else
+      const pathchar = "\"
+    #endif
+    ' read dir recursive starting directory
+    path(1) = folder 
+    if( right(path(1), 1) <> pathchar) then
+        file = dir(path(1), fbNormal or fbDirectory, @attrib)
+        if( attrib and fbDirectory ) then
+            path(1) += pathchar
+        end if
+    end if
 
-    ' check if we have enough room for inserting the length
-    If padding < 8 Then padding = padding + 64
+    recnr = 0
+    cls
+    while i <= n
+    file = dir(path(i) + "*" , fbNormal or fbDirectory, @attrib)
+        while file > ""
+            if (attrib and fbDirectory) then
+                if file <> "." and file <> ".." then
+                    n += 1
+                    redim preserve path(1 to n)
+                    path(n) = path(i) + file + pathchar
+                end if
+            else
+                fileext = lcase(mid(file, instrrev(file, ".")))
+                if instr(1, filterext, fileext) > 0 and len(fileext) > 3 then
+                    ' get specific file information
+                    fsize = filelen(path(i) + file)
+                    fdate = Format(FileDateTime(path(i) + file), "yyyy-mm-dd hh:mm:ss" )
+                    If (attrib And fbReadOnly) <> 0 Then fattr = "read-only"
+                    If (attrib And fbHidden  ) <> 0 Then fattr = "hidden"
+                    If (attrib And fbSystem  ) <> 0 Then fattr = "system"
+                    If (attrib And fbArchive ) <> 0 Then fattr = "archived"
+                    select case listtype
+                        case "m3u"
+                            if instr(filterext, ".mp3") > 0 and htmloutput = "exif" then
+                                Locate 1, 1   
+                                consoleprint "scanning " & folder + " with filespec " + filterext + " with tag " & tag & " contains " & tagquery
+                                consoleprint str(recnr)
+                                recnr += 1
+                                ' path(i) folder and drive
+                                getmp3baseinfo(path(i) + file)
+                                argc(0) = "artist"
+                                argc(1) = "title"
+                                argc(2) = "album"
+                                argc(3) = "year"
+                                argc(4) = "genre"
+                                argc(5) = "nop"
 
-    message = message + String(padding, Chr(0))   ' adjust length
-    Dim As ULong l1 = Len(message)                ' new length
+                                argv(0) = taginfo(1)
+                                argv(1) = taginfo(2)
+                                argv(2) = taginfo(3)
+                                argv(3) = taginfo(4)
+                                argv(4) = taginfo(5)
+                                argv(5) = "nop"
+                            end if
 
-    l = l * 8    ' orignal length in bits
-    ' create ubyte ptr to point to l ( = length in bits)
-    Dim As UByte Ptr ub_ptr = Cast(UByte Ptr, @l)
+                            For j As Integer = 0 To 5
+                                'export to m3u
+                                if argc(j) = tag and instr(lcase(argv(j)), lcase(tagquery)) > 0 then
+                                    print #20, "#EXTINF:134," & argv(0) & " - " & argv(1)
+                                    print #20, path(i) & file
+                                    maxfiles += 1
+                                end if
+                            Next j
+                    end select
+                else
+                    'logentry("warning", "file format not supported - " + path(i) & file)
+                end if    
+            end if
+            file = dir(@attrib)
+        wend
+        i += 1
+    wend
 
-    For i = 0 To 7  'copy length of message to the last 8 bytes
-    message[l1 -8 + i] = ub_ptr[i]
-    Next
+    recnr = recnr - 1
+    consoleprint "scanned " & recnr & " files in " + folder + " with filespec " + filterext + " " & maxfiles & " file(s) found with " & tag & " " & tagquery
+    logentry("notice", "scanned and exported m3u")
+    close(20)
+    return maxfiles
 
-    For j = 0 To (l1 -1) \ 64 ' split into block of 64 bytes
-
-    A = a0 : B = b0 : C = c0 : D = d0
-
-    ' break chunk into 16 32bit uinteger
-    Dim As UInteger<32> Ptr M = Cast(UInteger<32> Ptr, @message[j * 64])
-
-    For i = 0 To 63
-      Select Case As Const i
-        Case 0 To 15
-          F = (B And C) Or ((Not B) And D)
-          g = i
-        Case 16 To 31
-          F = (B And D) Or (C And (Not D))
-          g = (i * 5 +1) Mod 16
-        Case 32 To 47
-          F = (B Xor C Xor D)
-          g = (i * 3 +5) Mod 16
-        Case 48 To 63
-          F = C Xor (B Or (Not D))
-          g = (i * 7) Mod 16
-      End Select
-      dtemp = D
-      D = C
-      C = B
-      temp = A + F + K(i)+ M[g] : ROtate_left(temp, s(i))
-      B = B + temp
-      A = dtemp
-    Next
-
-    a0 += A : b0 += B : c0 += C : d0 += D
-
-    Next
-
-    Dim As String answer
-    ' convert a0, b0, c0 and d0 in hex, then add, low order first
-    Dim As String s1 = Hex(a0, 8)
-    For i = 7 To 1 Step -2 : answer +=Mid(s1, i, 2) : Next
-    s1 = Hex(b0, 8)
-    For i = 7 To 1 Step -2 : answer +=Mid(s1, i, 2) : Next
-    s1 = Hex(c0, 8)
-    For i = 7 To 1 Step -2 : answer +=Mid(s1, i, 2) : Next
-    s1 = Hex(d0, 8)
-    For i = 7 To 1 Step -2 : answer +=Mid(s1, i, 2) : Next
-
-    Return LCase(answer)
-
-End Function
+end function
 
 ' text related functions
 ' ______________________________________________________________________________'
@@ -682,17 +804,15 @@ End Function
 ' split or explode by delimiter return elements in array
 ' based on https://www.freebasic.net/forum/viewtopic.php?t=31691 code by grindstone
 Function explode(haystack As String = "", delimiter as string, ordinance() As String) As UInteger
-    Dim As String text = haystack  'remind explode as working copy
     Dim As UInteger b = 1, e = 1   'pointer to text, begin and end
     Dim As UInteger x              'counter
-    ReDim ordinance(0)             'reset array
 
     Do Until e = 0
       x += 1
-      ReDim Preserve ordinance(x)         'create new array element
-      e = InStr(e + 1, text, delimiter)   'set end pointer to next space
-      ordinance(x) = Mid(text, b, e - b)  'cut text between the pointers and write it to the array
-      b = e + 1                           'set begin pointer behind end pointer for the next word
+      ReDim Preserve ordinance(x)             'create new array element
+      e = InStr(e + 1, haystack, delimiter)   'set end pointer to next space
+      ordinance(x) = Mid(haystack, b, e - b)  'cut text between the pointers and write it to the array
+      b = e + 1                               'set begin pointer behind end pointer for the next word
     Loop
 
     Return x 'nr of elements returned
