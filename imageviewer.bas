@@ -2,12 +2,13 @@
 ' Translated to FreeBASIC by Michael "h4tt3n" Schmidt Nissen, march 2017
 ' http://www.willusher.io/sdl2%20tutorials/2013/08/18/lesson-3-sdl-extension-libraries
 ' tweaked for fb and sdl2 sept 2022 by thrive4
-' supported image formats .bmp, .gif, .jpg, .mp3, .png, .pcx, .jpeg, .svg, .gls
+' supported image formats .bmp, .gif, .jpg, .jpeg, .mp3, .png, .pcx, .svg, .webp
 
 #include once "SDL2/SDL.bi"
 #include once "SDL2/SDL_image.bi"
 #include once "utilfile.bas"
-#include once "shuffleplay.bas"
+#include once "listplay.bas"
+#include once "utilaudio.bas"
 #cmdline "app.rc"
 
 ' setup imageviewer
@@ -21,33 +22,48 @@ dim fpscurrent      as ulong
 dim desktopw        as integer
 dim desktoph        as integer
 dim desktopr        as integer
-dim rotateimage     as SDL_RendererFlip = SDL_FLIP_NONE
-dim rotateangle     as double = 0
-dim locale          as string = "en"
-
+dim locale          as string  = "en"
+dim shared as string filename
+filename                       = ""
+Dim shared As SDL_Texture Ptr background_surface = 0
+Dim shared As SDL_Renderer Ptr renderer          = 0
+dim shared as SDL_RendererFlip rotateimage       = SDL_FLIP_NONE
+dim shared as double rotateangle                 = 0
 'zoomtype options stretch, scaled, zoomsmallimage
-dim zoomtype        as string = "zoomsmallimage"
+dim shared as string zoomtype
+zoomtype = "zoomsmallimage"
 dim shared dummy    as string
 dim shared mp3chk   as boolean
-dummy = ""
+dummy  = ""
 mp3chk = false
+
 ' get desktop info
 ScreenInfo desktopw, desktoph,,,desktopr
 
+' setup timer used as interval between showing next image in microseconds
+dim inittime    as integer = 0
+dim interval    as integer = fps * 100 '3000
+dim currenttime as integer
+' setup timer used by effects
+dim fxinittime  as integer = 0
+dim menurefresh as integer = 25000
+
 ' setup list of images for background
-dim filename    as string
-dim fileext     as string = ""
-dim imagefolder as string
-dim imagetypes  as string = ".bmp, .gif, .jpg, .mp3, .png, .pcx, .jpeg, .svg" 
-dim playtype    as string = "linear"
+dim fileext      as string = ""
+dim mediafolder  as string
+dim imagetypes   as string = ".bmp, .gif, .gls, .jpg, .jpeg, .mp3, .png, .pcx, .svg, .webp" 
+dim playtype     as string = "linear"
+dim currentitem  as integer
+dim maxitemslist as integer
+dim listtype     as string = "image"
 
 ' screensaver
 dim screensaveinterval as integer = 30 * 1000 ' in seconds
 dim screensaveactive   as boolean = false
 dim screensaveinittime as integer = 0
 dim screensavetype     as string  = "dimscreen"
-dim currenttime        as integer = 0
-dim fadetime           as single = ((screensaveinterval / 1000) * 1.25) / (screensaveinterval / 1000)
+'dim currenttime        as integer = 0
+dim fadetime           as single  = ((screensaveinterval / 1000) * 1.25) / (screensaveinterval / 1000)
 dim fade               as integer = 255
 
 ' define area dim screen
@@ -76,7 +92,7 @@ Dim oscaledw as integer = scaledw
 Dim oscaledh as integer = scaledh
 
 ' navigation default values
-dim kback as integer
+'dim kback as integer
 ' init app with config file if present conf.ini
 dim itm     as string
 dim inikey  as string
@@ -84,12 +100,12 @@ dim inival  as string
 dim inifile as string = exepath + "\conf\conf.ini"
 dim f       as long
 if FileExists(inifile) = false then
-    logentry("error", inifile + "file does not excist")
+    logentry("error", inifile + " file does not excist")
 else 
     f = readfromfile(inifile)
     Do Until EOF(f)
         Line Input #f, itm
-        if instr(1, itm, "=") > 1 then
+        if instr(1, itm, "=") > 1 and Left(itm, 1) <> "'" then
             inikey = trim(mid(itm, 1, instr(1, itm, "=") - 2))
             inival = trim(mid(itm, instr(1, itm, "=") + 2, len(itm)))
             if inival <> "" then
@@ -111,8 +127,8 @@ else
                         usecons = inival
                     case "logtype"
                         logtype = inival
-                    case "imagefolder"
-                        imagefolder = inival
+                    case "mediafolder"
+                        mediafolder = inival
                     case "playtype"
                         playtype = inival
                     case "screensaveinterval"
@@ -132,9 +148,18 @@ else
     close(f)    
 end if    
 
+' verify locale otherwise set default
+select case locale
+    case "en", "es", "de", "fr", "nl"
+        ' nop
+    case else
+        logentry("error", "unsupported locale " + locale + " applying default setting")
+        locale = "en"
+end select
+
 ' parse commandline
 select case command(1)
-    case "/?", "-h", "-help", "-man"
+    case "/?", "-h", "-help", "--help", "-man"
         displayhelp(locale)
         goto cleanup
     case "-v", "-ver"
@@ -142,51 +167,46 @@ select case command(1)
         goto cleanup
 end select
 
+' get media
 dummy = resolvepath(command(1))
-if instr(dummy, ".") <> 0 and instr(dummy, "..") = 0 and instr(dummy, ".m3u") = 0 then
-    fileext = lcase(mid(dummy, instrrev(dummy, ".")))
-    if instr(1, imagetypes, fileext) = 0 then
-        logentry("fatal", dummy + " file type not supported")
-    end if
-    imagefolder = left(dummy, instrrev(dummy, "\") - 1)
-    chk = createlist(imagefolder, imagetypes, "image")
-    currentimage = setcurrentlistitem("slideshow", dummy)
-    'currentimage -= 1
-else
-    ' specific path
-    if instr(dummy, "\") <> 0 and instr(dummy, ".m3u") = 0  then
-        imagefolder = dummy
-        if checkpath(imagefolder) = false then
-            logentry("fatal",  "error: path not found " + imagefolder)
-        else
-            chk = createlist(imagefolder, imagetypes, "image")
-            if chk = false then
+if instr(dummy, ".m3u") = 0 and instr(dummy, ".pls") = 0 and instr(dummy, "http") = 0 then
+    if instr(dummy, ".") <> 0 and instr(dummy, "..") = 0 then
+        fileext = lcase(mid(dummy, instrrev(dummy, ".")))
+        if instr(1, imagetypes, fileext) = 0 then
+            logentry("fatal", dummy + " file type not supported")
+        end if
+        mediafolder = left(dummy, instrrev(dummy, "\") - 1)
+        createlist(mediafolder, imagetypes, listtype)
+    else
+        ' specific path
+        if instr(dummy, "\") <> 0 and instr(dummy, ".m3u") = 0  then
+            mediafolder = dummy
+            if checkpath(mediafolder) = false then
+                logentry("fatal",  "error: path not found " + mediafolder)
+            else            
+                if createlist(mediafolder, imagetypes, listtype) = 0 then
+                    logentry("fatal", "error: no displayable files found")
+                end if
+            end if
+        ELSE
+            ' fall back to path imagefolder specified in conf.ini
+            if checkpath(mediafolder) = false then
+                logentry("warning", "error: path not found " + mediafolder)
+                ' try scanning exe path
+                mediafolder = exepath
+            end if
+            if createlist(mediafolder, imagetypes, listtype) = 0 then
                 logentry("fatal", "error: no displayable files found")
             end if
-            filename = listplay(playtype, "image")
         end if
-    ELSE
-        ' fall back to path imagefolder specified in conf.ini
-        if checkpath(imagefolder) = false then
-            logentry("warning", "error: path not found " + imagefolder)
-            ' try scanning exe path
-            imagefolder = exepath
-        end if
-        chk = createlist(imagefolder, imagetypes, "image")
-        if chk = false then
-            logentry("fatal", "error: no displayable files found")
-        end if
-        filename = listplay(playtype, "image")
     end if
 end if
+
 if command(2) = "fullscreen" or command(4) = "fullscreen" then
     screenwidth  = desktopw
     screenheight = desktoph
     fullscreen = true
 end if 
-
-' setup parsing pls and m3u
-dim maxitems        as integer
 
 ' use .m3u as slideshow coverart mp3s
 if instr(dummy, ".m3u") <> 0 then
@@ -195,8 +215,7 @@ if instr(dummy, ".m3u") <> 0 then
     else
         logentry("fatal", dummy + " file does not excist or possibly use full path to file")
     end if
-    maxitems = getmp3playlist(dummy, "image")
-    filename = listplay(playtype, "image")
+    listnr = getmp3playlist(dummy, listtype)
     logentry("notice", "parsing and playing playlist " + filename)
 end if
 
@@ -209,18 +228,14 @@ if instr(dummy, ":") <> 0 and len(command(2)) <> 0 and command(2) <> "fullscreen
         case "year"
         case "genre"
         case else
-            delfile(exepath + "\" + "image" + ".tmp")
-            delfile(exepath + "\" + "image" + ".lst")
-            delfile(exepath + "\" + "image" + ".swp")
             logentry("fatal", "unknown tag '" & command(2) & "' valid tags artist, title, album, genre and year")
     end select
     ' scan and search nr results overwritten by getmp3playlist
-    maxitems = exportm3u(dummy, "*.mp3", "m3u", "exif", command(2), command(3))
-    maxitems = getmp3playlist(exepath + "\" + command(3) + ".m3u", "image")
-    filename = listplay(playtype, "image")
-    currentsong = setcurrentlistitem("image", filename)
-    if currentsong = 1 then
+    listnr = exportm3u(dummy, "*.mp3", "m3u", "exif", command(2), command(3))
+    if listnr < 2 then
         logentry("fatal", "no matches found for " + command(3) + " in " + command(2))
+    else
+        listnr = getmp3playlist(exepath + "\" + command(3) + ".m3u", listtype)
     end if
 end if
 dummy = ""
@@ -241,14 +256,28 @@ sub checkmp3cover(byref filename as string)
     end if
 end sub
 
+' toggle main loop to opengl shader if .gls file
+' todo needs beter place
+#include once "shadertoy.bas"
+dim shared as boolean glrunning = false
+
 ' get next or previous image
-sub getimage(byref filename as string, byref dummy as string, byref mp3chk as boolean, byval playtype as string)
-    filename = listplay(playtype, "image")
-    checkmp3cover(filename)
-    ' validate if false get next image
-    if filename = "" or FileExists(filename) = false then
-        filename = listplay(playtype, "image")
+sub playmedia(byval index as integer)
+    dim as string entry = listrec.listfile(index)
+
+    filename = entry
+    if glrunning = false then
         checkmp3cover(filename)
+        ' validate if false get next image
+        if filename = "" or FileExists(filename) = false then
+            filename = listrec.listfile(index + 1)
+            checkmp3cover(filename)
+        end if
+        SDL_DestroyTexture(background_surface)
+        background_surface = IMG_LoadTexture(renderer, filename)
+        ' reset rotation
+        rotateangle = 0
+        zoomtype = "zoomsmallimage"
     end if
 end sub
 
@@ -327,8 +356,31 @@ Function syncfps(ByVal MyFps As Ulong, ByVal SkipImage As Boolean = True, ByVal 
     Return fps
 End Function
 
-' check if mp3 coverart present keep outside f11 fullscreen toggle
-checkmp3cover(filename)
+' set active media item
+if instr(command(1), ".") > 0 and instr(command(1), ".m3u") = 0 and instr(command(1), ".pls") = 0 then
+    currentitem = getcurrentlistitem(listtype, command(1))
+else
+    currentitem = listnext(listtype, playtype, 0)
+end if
+maxitemslist = getmaxitemslist(listtype)
+setsequence(currentitem)
+if lcase(playtype) = "linear" then
+    clearseq(listtype)
+end if
+
+' play first item
+playmedia(currentitem)
+
+if instr(1, filename, ".gls") > 0 then
+    running      = false
+    glrunning    = true
+    glfullscreen = false
+    shader.CompileFile(filename)
+    inittime = currenttime
+else
+    SDL_GL_DeleteContext(glContext)
+    SDL_DestroyWindow(glglass)
+end if
 
 initsdl:
 ' init window and render
@@ -360,7 +412,7 @@ if (glass = NULL) Then
 	SDL_Quit()
     logentry("fatal", "abnormal termination sdl2 could not create window")
 EndIf
-Dim As SDL_Renderer Ptr renderer = SDL_CreateRenderer(glass, -1, SDL_RENDERER_ACCELERATED Or SDL_RENDERER_PRESENTVSYNC)
+renderer = SDL_CreateRenderer(glass, -1, SDL_RENDERER_ACCELERATED Or SDL_RENDERER_PRESENTVSYNC)
 'SDL_SetWindowOpacity(glass, 0.5)
 if (renderer = NULL) Then	
 	SDL_Quit()
@@ -395,17 +447,17 @@ Dim As ZString Ptr map = SDL_GameControllerMapping(controller)
 'print *map
 'sleep 3000
 
-' load texture
-Dim As SDL_Texture Ptr background_surface
-SDL_DestroyTexture(background_surface)
-background_surface = IMG_LoadTexture(renderer, filename)
-' verify load image
-if ( background_surface = NULL ) Then
-	'cleanup(background, image, renderer, window)
-	IMG_Quit()
-	SDL_Quit()
-    logentry("fatal", "abnormal termination sdl2 could not create texture")
-EndIf
+if glrunning = false then
+    SDL_DestroyTexture(background_surface)
+    background_surface = IMG_LoadTexture(renderer, filename)
+    ' verify load image
+    if ( background_surface = NULL ) Then
+        'cleanup(background, image, renderer, window)
+        IMG_Quit()
+        SDL_Quit()
+        logentry("fatal", "abnormal termination sdl2 could not create texture")
+    End If
+end if
 
 ' scale and posisition image scale needs to be a float
 function resizebyaspectratio(screenw as integer, screenh as integer, imagew as integer, imageh as integer) as single
@@ -448,6 +500,119 @@ function scaledfit(screenw as integer, screenh as integer,_
     return true
 end function
 
+' main shadertoy sdl
+While glrunning
+    ' make sure gl window is on top
+    SDL_RaiseWindow(glglass)
+    While SDL_PollEvent(@event)
+        select case event.type
+            case SDL_KEYDOWN and event.key.keysym.sym = SDLK_ESCAPE
+                SDL_GL_DeleteContext(glContext)
+                SDL_DestroyWindow(glglass)
+                glrunning = False
+                running = false
+            case SDL_WINDOWEVENT and event.window.event = SDL_WINDOWEVENT_CLOSE
+                SDL_GL_DeleteContext(glContext)
+                SDL_DestroyWindow(glglass)
+                glrunning = False
+                running   = false
+            case SDL_WINDOWEVENT and event.window.event = SDL_WINDOWEVENT_MINIMIZED
+                SDL_HideWindow(glglass)
+            case SDL_WINDOWEVENT and event.window.event = SDL_WINDOWEVENT_RESTORED
+                SDL_ShowWindow(glglass)
+            ' keep gl window in place relative to regular sdl window
+            case SDL_WINDOWEVENT and event.window.event = SDL_WINDOWEVENT_MOVED
+                SDL_GetWindowPosition(glass, @w2, @h2)
+                sdl_setwindowposition(glglass, w2, h2)
+            case SDL_WINDOWEVENT and event.window.event = SDL_WINDOWEVENT_RESIZED
+                SDL_GetWindowPosition(glass, @w2, @h2)
+                sdl_setwindowposition(glglass, w2, h2)
+            case SDL_KEYDOWN and event.key.keysym.sym = SDLK_F11
+                SDL_GL_DeleteContext(glContext)
+                SDL_DestroyRenderer(renderer)
+                SDL_DestroyWindow(glass)
+                SDL_DestroyWindow(glglass)
+                select case fullscreen
+                    case true
+                        ' enable or disable mouse cursor in window
+                        screenwidth  = 1280
+                        screenheight = 720
+                        fullscreen = false
+                        goto initgl
+                    case false
+                        screenwidth  = desktopw
+                        screenheight = desktoph
+                        fullscreen = true
+                        sdl_setwindowposition(glglass, 0, 0)
+                        goto initgl
+                end select
+            CASE SDL_KEYDOWN and event.key.keysym.sym = SDLK_RIGHT
+                ' get next shader in folder if avaiable
+                currentitem = listnext(listtype, playtype, currentitem)
+                if playtype = "shuffle" then
+                    setsequence(currentitem)
+                end if
+                playmedia(currentitem)
+                if shader.CompileFile(filename) = false then
+                    logentry("error", "error compiling " & filename)
+                end if
+                inittime = currenttime
+            CASE SDL_KEYDOWN and event.key.keysym.sym = SDLK_LEFT
+                ' get previous shader in folder if avaiable
+                currentitem = listprevious(listtype, playtype, currentitem)
+                playmedia(currentitem)
+                if shader.CompileFile(filename) = false then
+                    logentry("error", "error compiling " & filename)
+                end if
+                inittime = currenttime
+        end select
+    Wend
+
+/'
+    ' timer
+    currenttime = SDL_GetTicks()
+    if (currenttime > inittime + interval * 3) then
+        ' get next image in folder if avaiable
+        currentitem = listnext(listtype, playtype, currentitem)
+        if playtype = "shuffle" then
+            setsequence(currentitem)
+        end if
+        ' todo needs better handeling funky behaivour
+        if shader.CompileFile(filename) = false then
+            print "error compiling " & filename
+        end if
+        inittime = currenttime
+    end if
+'/
+
+    ' enable shader
+    glUseProgram(Shader.ProgramObject)
+    tNow = Timer()
+
+    ' get uniforms locations in shader program
+    var iGlobalTime = glGetUniformLocation(Shader.ProgramObject,"iGlobalTime")
+    var iTime       = glGetUniformLocation(Shader.ProgramObject,"iTime")
+    var iResolution = glGetUniformLocation(Shader.ProgramObject,"iResolution")
+    var iMouse      = glGetUniformLocation(Shader.ProgramObject,"iMouse")
+    var iDate       = glGetUniformLocation(Shader.ProgramObject,"iDate")
+    glUniform3f(iResolution, v3.x, v3.y, v3.z)
+    glUniform4f(idate, year(now), month(now), day(now), (hour(now) * 60 * 60) + (minute(now) * 60) + second(now) + (epoch - fix(epoch)))
+    glUniform1f(iGlobalTime, tNow - tStart)
+    glUniform1f(iTime, tNow - tStart)
+    glClear (GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT or GL_STENCIL_BUFFER_BIT)
+    glRectf (-1.0, -1.0, 1.0, 1.0)
+
+    ' Update the screen
+    SDL_GL_SwapWindow(glglass)
+
+    SDL_SetWindowTitle(glass, "shadertoy sdl2 file: " & filename)
+    ' reduce cpu usage affects shader animation
+    ' use sdl_delay to keep cpu usage low around 80 for ~10%
+    fpscurrent = syncfps(fps)
+    ' todo phase out funky trick to achieve desired animation duration
+    sleep fpscurrent * 0.35f
+Wend
+
 ' main
 while running
     ' screen dimmer / saver timer in microseconds
@@ -487,8 +652,6 @@ while running
                         zoomtype = "zoomsmallimage"
                         goto initsdl
                 end select
-                IMG_Quit()
-                close
             ' zoom manual
             case SDL_KEYDOWN and event.key.keysym.sym = SDLK_KP_PLUS
                 zoomtype = "zoomin"
@@ -509,22 +672,17 @@ while running
                 ' reset rotation and zoomtype
                 rotateangle = 0
                 zoomtype = "zoomsmallimage"
-            CASE SDL_KEYDOWN and event.key.keysym.sym = SDLK_LEFT
-                ' get previous image in folder if avaiable
-                getimage(filename, dummy, mp3chk, "linearmin")
-                SDL_DestroyTexture(background_surface)
-                background_surface = IMG_LoadTexture(renderer, filename)
-                ' reset rotation and zoomtype
-                rotateangle = 0
-                zoomtype = "zoomsmallimage"
             CASE SDL_KEYDOWN and event.key.keysym.sym = SDLK_RIGHT
                 ' get next image in folder if avaiable
-                getimage(filename, dummy, mp3chk, playtype)
-                SDL_DestroyTexture(background_surface)
-                background_surface = IMG_LoadTexture(renderer, filename)
-                ' reset rotation
-                rotateangle = 0
-                zoomtype = "zoomsmallimage"
+                currentitem = listnext(listtype, playtype, currentitem)
+                if playtype = "shuffle" then
+                    setsequence(currentitem)
+                end if
+                playmedia(currentitem)
+            CASE SDL_KEYDOWN and event.key.keysym.sym = SDLK_LEFT
+                ' get previous image in folder if avaiable
+                currentitem = listprevious(listtype, playtype, currentitem)
+                playmedia(currentitem)
             ' rotate clockwise
             case SDL_KEYDOWN and (event.key.keysym.sym = SDLK_R or event.key.keysym.sym = SDLK_RETURN)
                 if rotateangle > -270 then
@@ -553,23 +711,18 @@ while running
                 select case event.button.button
                     case SDL_BUTTON_LEFT
                         ' get next image in folder if avaiable
-                        getimage(filename, dummy, mp3chk, playtype)
-                        SDL_DestroyTexture(background_surface)
-                        background_surface = IMG_LoadTexture(renderer, filename)
-                        ' reset rotation
-                        rotateangle = 0
-                        zoomtype = "zoomsmallimage"
+                        currentitem = listnext(listtype, playtype, currentitem)
+                        if playtype = "shuffle" then
+                            setsequence(currentitem)
+                        end if
+                        playmedia(currentitem)
                     case SDL_BUTTON_MIDDLE
                         rotateangle = 0
                         zoomtype = "zoomsmallimage"
                     case SDL_BUTTON_RIGHT
                         ' get previous image in folder if avaiable
-                        getimage(filename, dummy, mp3chk, "linearmin")
-                        SDL_DestroyTexture(background_surface)
-                        background_surface = IMG_LoadTexture(renderer, filename)
-                        ' reset rotation
-                        rotateangle = 0
-                        zoomtype = "zoomsmallimage"
+                        currentitem = listprevious(listtype, playtype, currentitem)
+                        playmedia(currentitem)
                 end select
             case SDL_MOUSEBUTTONUP
                 'nop
@@ -578,20 +731,15 @@ while running
                 select case event.cbutton.button    
                     case SDL_CONTROLLER_BUTTON_DPAD_LEFT
                         ' get previous image in folder if avaiable
-                        getimage(filename, dummy, mp3chk, "linearmin")
-                        SDL_DestroyTexture(background_surface)
-                        background_surface = IMG_LoadTexture(renderer, filename)
-                        ' reset rotation
-                        rotateangle = 0
-                        zoomtype = "zoomsmallimage"
+                        currentitem = listprevious(listtype, playtype, currentitem)
+                        playmedia(currentitem)
                     case SDL_CONTROLLER_BUTTON_DPAD_RIGHT
                         ' get next image in folder if avaiable
-                        getimage(filename, dummy, mp3chk, playtype)
-                        SDL_DestroyTexture(background_surface)
-                        background_surface = IMG_LoadTexture(renderer, filename)
-                        ' reset rotation
-                        rotateangle = 0
-                        zoomtype = "zoomsmallimage"
+                        currentitem = listnext(listtype, playtype, currentitem)
+                        if playtype = "shuffle" then
+                            setsequence(currentitem)
+                        end if
+                        playmedia(currentitem)
                     case SDL_CONTROLLER_BUTTON_DPAD_DOWN
                         zoomtype = "zoomout"
                     case SDL_CONTROLLER_BUTTON_DPAD_UP
@@ -719,15 +867,13 @@ wend
 SDL_DestroyTexture(background_surface)
 SDL_DestroyRenderer(renderer)
 SDL_DestroyWindow(glass)
+SDL_GL_DeleteContext(glContext)
+SDL_DestroyWindow(glglass)
 IMG_Quit()
 SDL_Quit()
 close
 
 cleanup:
-' cleanup listplay files
-delfile(exepath + "\" + "image" + ".tmp")
-delfile(exepath + "\" + "image" + ".lst")
-delfile(exepath + "\" + "image" + ".swp")
 delfile(exepath + "\thumb.jpg")
 delfile(exepath + "\thumb.png")
 
