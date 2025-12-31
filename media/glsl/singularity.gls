@@ -1,0 +1,36 @@
+// https://www.shadertoy.com/view/3csSWB
+/*
+    "Singularity" by @XorDev
+
+    I'll come back to clean up the code later.
+    Feel free to code golf!
+    
+    FabriceNeyret2: -19
+    dean_the_coder: -12
+    iq: -4
+*/
+void mainImage(out vec4 O, vec2 F)
+{
+    float i,j;
+    vec2 r = iResolution.xy,
+         p = ( F+F - r ) / r.y / .7,
+         d = vec2(-1,1),
+         q = 5.*p - d, 
+         c = p * mat2(1, 1, d/(.1 + 5./dot(q,q)) ),
+         v = c * mat2(cos(.5*log(j=dot(c,c))+iTime*.2 + vec4(0,33,11,0))) * 5.,
+         s;
+   
+    for (int i = 1; i < 10; i++) {
+        float fi = float(i);
+        s += 1.0 + sin(v.x + v.y);
+        v += 0.7 * sin(v.yx * fi + iTime) / fi + 0.5;
+    }
+        
+    i = length( sin(v/.3)*.4 + c*(3.+d) );
+    O = 1. - exp( -exp( c.x * vec4(.6,-.4,-1,0) )
+                   /  s.xyyx
+                   / ( 2. + i*i/4. - i )
+                   / ( .5 + 3.5 *exp( .3*c.y - j ) )
+                   / ( .03 + abs( length(p)-.7 ) )
+             );
+}

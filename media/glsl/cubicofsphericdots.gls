@@ -1,0 +1,22 @@
+// courtesy https://www.shadertoy.com/view/4ccyWM
+#define R(p,a,r)mix(a*dot(p,a),p,cos(r))+sin(r)*cross(p,a)
+#define H(h)(cos((h)*6.3+vec3(0,23,21))*.5+.5)
+
+void mainImage(out vec4 O, vec2 C)
+{
+    O=vec4(0);
+    vec3 p,r=iResolution,d=normalize(vec3((C-.5*r.xy)/r.y,1.));
+    for(float i=0.,g,e=1.,t=iTime;++i<99.;){
+        p=g*d;
+        p.z-=5.+cos(iTime);
+        p=R(p, normalize(vec3(2,2,5)), t*1.);
+        g+=e=(
+            length(p+cos(iTime))-1.0+
+            dot(
+                sin(p*10.+t*5.),
+                cos((10.*fract(p+cos(iTime))-vec3(atan(t+cos(iTime)),sin(t)*10.,cos(t)+cos(iTime)*10.)+cos(iTime))*2.+t*5.)
+                )*0.7
+            )*0.08;
+        O.xyz+=mix(vec3(0.5,0.2,5.),H(dot(p,p)*0.15),.8)*.01*exp(-.05*i*i*e);
+    }
+}
