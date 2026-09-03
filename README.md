@@ -40,8 +40,8 @@ imageviewer.exe media\glsl
 
 ## install
 open zip file and copy contents to preferd folder\
-this application is **portable**.
-note: for windows all requirements are bundeld in zip
+this application is **portable**.\
+note: for windows all requirements are bundeld in zip\
       for linux see below.
 
 ## requirements
