@@ -14,7 +14,7 @@ See https://www.shadertoy.com/ for more info.
 
 Haptic support for keyboard, mouse and gamepad.
 
-note: 2026 august merged slideshow repo with imageviewer
+note: 2026 august **merged** slideshow repo with imageviewer\
 https://github.com/thrive4/app.fb.slideshow
 
 ## usage
