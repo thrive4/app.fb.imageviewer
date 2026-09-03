@@ -1,10 +1,28 @@
 ' used for app launcher
+#ifdef __FB_WIN32__
 #include once "crt/process.bi"
+' for printf
+#include once "crt/stdio.bi"
+#endif
 ' dir function and provides constants to use for the attrib_mask parameter
 #include once "vbcompat.bi"
 #include once "dir.bi"
-' for printf
-#include once "crt/stdio.bi"
+
+dim shared pathchar as string
+dim shared newline	as string
+#ifdef __FB_LINUX__
+	pathchar = "/"
+	newline  = chr$(10)
+#else
+	pathchar = "\"
+	newline  = chr$(13) + chr$(10)
+#endif
+
+#ifdef __FB_LINUX__
+#define max(a, b) iif((a) > (b), (a), (b))
+#define min(a, b) iif((a) < (b), (a), (b))
+#endif
+#define clampbyte(v) min(max((v), 0), 255)
 
 ' setup log
 dim shared logfile    as string
@@ -15,7 +33,7 @@ dim shared usecons    as string
 dim shared exeversion as string
 
 ' note command(0) can arbitraly add the path so strip it
-appname = mid(command(0), instrrev(command(0), "\") + 1)
+appname = mid(command(0), instrrev(command(0), pathchar) + 1)
 ' without file extension
 if instr(appname, ".exe") > 0 then
     appname = left(appname, len(appname) - 4)
@@ -60,6 +78,8 @@ os = "unknown"
 ' comment bobsobol
 function consoleprint(msg as string, forcewstr as boolean = false) as boolean
 
+#ifdef __FB_WIN32__
+
     if AttachConsole(ATTACH_PARENT_PROCESS) THEN ' gui mode
         Shell("Cls")
 		freopen( "CON", "r", stdin )
@@ -84,7 +104,10 @@ function consoleprint(msg as string, forcewstr as boolean = false) as boolean
     END IF
 
     return true
-
+#else
+	print msg
+	return true
+#endif
 end function
 
 ' metric functions
@@ -107,7 +130,7 @@ Function logentry(entrytype As String, logmsg As String) As Boolean
     ' setup logfile
     dim f as long
     f = FreeFile
-    logfile = exepath + "\" + appname + ".log"
+    logfile = exepath + pathchar + appname + ".log"
     if FileExists(logfile) = false then
         Open logfile For output As #f
         print #f, format(now, "dd/mm/yyyy") + " - " + time + "|" + "notice" + "|" + appname + "|" + logfile + " created"
@@ -139,53 +162,155 @@ End function
 
 ' get fileversion executable or dll
 function getfileversion(versinfo() as string, versdesc() as string) as integer
+#ifdef __FB_WIN32__
 
-    dim as integer bytesread,c,dwHandle,res,verSize
-    dim as string buffer,ls,qs,tfn
-    dim as ushort ptr b1,b2
+    dim as dword bytesread, c, dwHandle, res, verSize
+    dim as string buffer, ls, qs, tfn
+    dim as ushort ptr b1, b2
     dim as ubyte ptr bptr
 
-    tfn=versinfo(8)
-    if dir(tfn)="" then return -1
-    verSize=GetFileVersionInfoSize(tfn,@dwHandle)
-    if verSize=0 then return -2
-    dim as any ptr verdat=callocate(verSize*2)
+    tfn = versinfo(8)
+    if dir(tfn) = "" then return -1
+    verSize = GetFileVersionInfoSize(tfn, @dwHandle)
+    if verSize = 0 then return -2
+    dim as any ptr verdat = callocate(verSize)
 
-    res=GetFileVersionInfo(strptr(tfn),dwHandle,verSize*2,verdat)
-    res=_
+    res = GetFileVersionInfo(strptr(tfn), dwHandle, verSize, verdat)
+    res = _
         VerQueryValue(_
-            verdat,_
-            "\VarFileInfo\Translation",_
-            @bptr,_
+            verdat, _
+            "\VarFileInfo\Translation", _
+            @bptr, _
             @bytesread)
 
-    if bytesread=0 then deallocate(verdat):return -3
+    if bytesread = 0 then deallocate(verdat): return -3
 
-    b1=cast(ushort ptr,bptr)
-    b2=cast(ushort ptr,bptr+2)
-    ls=hex(*b1,4)& hex(*b2,4)
+    b1 = cast(ushort ptr, bptr)
+    b2 = cast(ushort ptr, bptr + 2)
+    ls = hex(*b1, 4) & hex(*b2, 4)
 
-    for c=0 to 7
-        qs="\StringFileInfo\" & ls & "\" & versdesc(c)
-        res=_
+    for c = 0 to 7
+        qs = "\StringFileInfo\" & ls & pathchar & versdesc(c)
+        res = _
             VerQueryValue(_
-                verdat,_
-                strptr(qs),_
-                @bptr,_
+                verdat, _
+                strptr(qs), _
+                @bptr, _
                 @bytesread)
-        if bytesread>0 then
-            buffer=space(bytesread)
-            CopyMemory(strptr(buffer),bptr,bytesread)
-            versinfo(c)=buffer
+        if bytesread > 0 then
+            buffer = space(bytesread)
+            CopyMemory(strptr(buffer), bptr, bytesread)
+            versinfo(c) = buffer
         else
-            versinfo(c)="N/A"
+            versinfo(c) = "N/A"
         end if
     next c
     deallocate(verdat)
 
     return 1
-
+#endif
+return 1
 end function
+
+function getimagetype(filename as string) as string
+	dim imagetype as string
+	select case lcase(mid(filename, instrrev(filename, ".") + 1))
+		case "jpeg", "jpg"
+			imagetype = "joint photographic experts group (.jpeg .jpg)"
+		case "png"
+			imagetype = "portable network graphic (.png)"
+		case "gif"
+			imagetype = "graphics interchange format (.gif)"
+		case "bmp"
+			imagetype = "bitmap (.bmp)"
+		case "pcx"
+			imagetype = "paintbrush exchange (.pcx)"
+		case "tif", "tiff"
+			imagetype = "tagged image file format (.tif .tiff)"
+		case "webp"
+			imagetype = "web picture format (.webp)"
+		case "svg"
+			imagetype = "scalable vector graphics (.svg)"
+		case else
+			imagetype = "unknown"
+	end select
+	return imagetype
+end function
+
+' via https://www.freebasic.net/forum/viewtopic.php?t=32323 by fxm
+Function syncfps(ByVal MyFps As Ulong, ByVal SkipImage As Boolean = True, ByVal Restart As Boolean = False, ByRef ImageSkipped As Boolean = False) As Ulong
+    '' 'MyFps' : requested FPS value, in frames per second
+    '' 'SkipImage' : optional parameter to activate the image skipping (True by default)
+    '' 'Restart' : optional parameter to force the resolution acquisition, to reset to False on the next call (False by default)
+    '' 'ImageSkipped' : optional parameter to inform the user that the image has been skipped (if image skipping is activated)
+    '' function return : applied FPS value (true or apparent), in frames per second
+    Static As Single tos
+    Static As Single bias
+    Static As Long count
+    Static As Single sum
+    ' initialization calibration
+    If tos = 0 Or Restart = True Then
+        Dim As Double t = Timer
+        For I As Integer = 1 To 10
+            Sleep 1, 1
+        Next I
+        Dim As Double tt = Timer
+        #if Not defined(__FB_WIN32__) And Not defined(__FB_LINUX__)
+        If tt < t Then t -= 24 * 60 * 60
+        #endif
+        tos = (tt - t) / 10 * 1000
+        bias = 0
+        count = 0
+        sum = 0
+    End If
+    Static As Double t1
+    Static As Long N = 1
+    Static As Ulong fps
+    Static As Single tf
+    ' delay generation
+    Dim As Double t2 = Timer
+    #if Not defined(__FB_WIN32__) And Not defined(__FB_LINUX__)
+    If t2 < t1 Then t1 -= 24 * 60 * 60
+    #endif
+    Dim As Double t3 = t2
+    Dim As Single dt = (N * tf - (t2 - t1)) * 1000 - bias
+    If (dt >= 3 * tos / 2) Or (SkipImage = False) Or (N >= 20) Or (fps / N <= 10) Then
+        If dt <= tos Then dt = tos / 2
+        Sleep dt, 1
+        t2 = Timer
+        #if Not defined(__FB_WIN32__) And Not defined(__FB_LINUX__)
+        If t2 < t1 Then t1 -= 24 * 60 * 60 : t3 -= 24 * 60 * 60
+        #endif
+        fps = N / (t2 - t1)
+        tf = 1 / MyFps
+        t1 = t2
+        ' automatic test and regulation
+        Dim As Single delta = (t2 - t3) * 1000 - (dt + bias)
+        If Abs(delta) > 3 * tos Then
+            tos = 0
+        Else
+            bias += 0.1 * Sgn(delta)
+        End If
+        ' automatic calibation
+        If dt < tos Then
+            If count = 100 Then
+                tos = sum / 100 * 1000
+                bias = 0
+                sum = 0
+                count = 0
+            Else
+                sum += (t2 - t3)
+                count += 1
+            End If
+        End If
+        ImageSkipped = False
+        N = 1
+    Else
+        ImageSkipped = True
+        N += 1
+    End If
+    Return fps
+End Function
 
 ' generic file functions
 ' ______________________________________________________________________________'
@@ -239,14 +364,18 @@ function getfolders (filespec As String, ordinance() As String) as uinteger
 end function
 
 function getdrivelabel(drive as string) as string
+#ifdef __FB_WIN32__
     Dim As ZString * 1024 deviceName
     Dim As ZString * 1024 volumeName
     QueryDosDevice(drive, deviceName, 1024)
     GetVolumeInformation(drive, volumeName, 1024, 0, 0, 0, 0, 0)
     return volumeName
+#endif
+return "nix"
 end function
 
 function getdrivestorage(drive as string, metric as string) as ULongInt
+#ifdef __FB_WIN32__
     Dim As ULARGE_INTEGER freeBytesAvailable
     Dim As ULARGE_INTEGER totalNumberOfBytes
     Dim As ULARGE_INTEGER totalNumberOfFreeBytes
@@ -263,6 +392,8 @@ function getdrivestorage(drive as string, metric as string) as ULongInt
     '    Print "Error: "; GetLastError()
         return 0
     End If
+#endif
+return 0
 end function
 
 function convertbytesize(totalsize as longint) as string
@@ -287,7 +418,7 @@ Function newfile(filename As String) As boolean
     Dim f As long
 
     if FileExists(filename) then
-        logentry("warning", "creating " + filename + " file excists")
+        logentry("warning", "creating " + filename + " file exists")
         return false
     end if    
 
@@ -304,7 +435,7 @@ Function appendfile(filename As String, msg as string) As boolean
     Dim f As long
 
     if FileExists(filename) = false then
-        logentry("error", "appending " + filename + " file does not excist")
+        logentry("error", "appending " + filename + " file does not exist")
         return false
     end if
 
@@ -321,7 +452,7 @@ Function readfromfile(filename As String) As long
     Dim f As long
 
     if FileExists(filename) = false then
-        logentry("error", "reading " + filename + " file does not excist")
+        logentry("error", "reading " + filename + " file does not exist")
     end if
 
     f = FreeFile
@@ -348,7 +479,6 @@ Function checkpath(chkpath As String) As boolean
 
     dim dummy as string
     dummy = curdir
-
     if chdir(chkpath) <> 0 then
         logentry("warning", "path " + chkpath + " not found")
         chdir(dummy)
@@ -360,23 +490,53 @@ Function checkpath(chkpath As String) As boolean
 
 End Function
 
+' declare realpath from c library only works on nix
+#ifdef __FB_UNIX__
+    Declare Function realpath Cdecl Alias "realpath" (Byval pathname As ZString Ptr, Byval resolved_path As ZString Ptr) As ZString Ptr
+    Declare Function getcwd   Cdecl Alias "getcwd"   (Byval buffer As ZString Ptr, Byval size As Integer) As ZString Ptr
+#endif
+
 ' resolve path commandline argument
 Function resolvepath(path As String) As String
-    Dim buffer        as String * 260
-    dim resolvedpath  as string
-    Dim length        as Integer 
+    ' Handle URLs first
+    If Left$(LCase$(path), 7) = "http://" Or Left$(LCase$(path), 8) = "https://" Then
+        Return path
+    End If
 
-    if left$(lcase(path), 7) = "http://" or left$(lcase(path), 8) = "https://" then
-        resolvedpath = path
-    else
-        length = GetFullPathName(path, 260, buffer, Null)
-        If length > 0 Then
-            resolvedpath = Left(buffer, length)
+#ifdef __FB_WIN32__
+    Dim buffer As String * 4096
+    Dim length As Integer
+    length = GetFullPathName(path, 4096, buffer, Null)
+    If length > 0 Then
+        Return Left$(buffer, length)
+    Else
+        Return path
+    End If
+#else
+    Dim buffer As ZString * 4096
+
+    If Left$(path, 1) = "/" Then
+        If realpath(StrPtr(path), @buffer) <> 0 Then
+            Return *StrPtr(buffer)
         Else
-            resolvedpath = path ' fallback if API fails
+            Return path
         End If
-    end if
-    return resolvedpath
+    End If
+
+    If realpath(StrPtr(path), @buffer) <> 0 Then
+        Return *StrPtr(buffer)
+    Else
+        Dim cwd As ZString * 4096
+        If getcwd(@cwd, 4096) <> 0 Then
+            Dim result As String = *StrPtr(cwd)
+            If Right$(result, 1) <> "/" Then result &= "/"
+            result &= path
+            Return result
+        Else
+            Return path
+        End If
+    End If
+#endif
 End Function
 
 ' localization file functions
@@ -384,19 +544,19 @@ End Function
 
 ' localization can be applied by getting a locale or other method
 sub displayhelp(locale as string)
-    dim item  as string
-    dim dummy as string
-    dim f     as long
+
+    dim as string dummy, dummy2
+    dim as long   f
     f = freefile
 
     ' get text
-    Open exepath + "\conf\" + locale + "\help.ini" For input As #f
+    Open exepath + pathchar + "conf" + pathchar + locale + pathchar + "help.ini" For input As #f
     Do Until EOF(f)
-        Line Input #f, item
-        dummy = dummy + item + chr$(13) + chr$(10)
+        Line Input #f, dummy
+        dummy2 += dummy + newline
     Loop
     close(f)
-    consoleprint (dummy, true)
+    consoleprint (wstr(dummy2), true)
 end sub
 
 ' setup ui labels aka data spindel
@@ -416,8 +576,8 @@ Function readuilabel(filename as string) as boolean
     dim f      as integer
 
     if FileExists(filename) = false then
-        logentry("error", filename + " does not excist switching to default language")
-        filename = exepath + "\conf\en\menu.ini"
+        logentry("error", filename + " does not exist switching to default language")
+        filename = exepath + pathchar +"conf" + pathchar + "en" + pathchar + "menu.ini"
     end if
     f = readfromfile(filename)
     Do Until EOF(f)

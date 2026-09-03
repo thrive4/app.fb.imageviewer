@@ -1,3 +1,19 @@
+update v1.8 03/09/2025
+- refactored code allowing linux / debian 64 bit compilation
+- refactored code allowing windows 64 bit compilation
+- sunset 32bits support windows
+- updated map version conf.ini to 1.2
+- update sdl2 from 2.32.4.0 to 2.32.10.0
+- update sdl_image from 2.8.8.0 to 2.8.10.0
+- implemented natural sorting files
+- added slideshow functionalty and corrected fade fx slideshow
+- added slideshow fx sepia fade in and out
+- added launch option slideshow app defaults to image
+- added i key displays image name in image viewer mode
+- added m key displays image metrics, size, type etc
+- added F1 key displays navigation help
+- added ttf font support with sdl_ttf 2.20.2.0
+
 update v1.7 29/12/2025
 - major rewrite due to implementing new listplay
   shuffleplay now superseded by listplay

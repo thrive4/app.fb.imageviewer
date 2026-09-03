@@ -4,97 +4,154 @@
 
 ' code by squall4226
 ' see https://www.freebasic.net/forum/viewtopic.php?p=149207&hilit=user+need+TALB+for+album#p149207
+' april 2026 tweaked to deal with both 64 and 32 bit
 Function getmp3tag(searchtag As String, fn As String) As String
-   'so we can avoid having the user need TALB for album, TIT2 for title etc, although they are accepted
-   Dim As Integer skip, offset' in order to read certain things right
-   ' reduce iterations with maxcheck tricky could miss data 
-   Dim As UInteger sig_to_find, count, maxcheck = 3000
-   'Dim As UInteger sig_to_find, count, maxcheck = 100000
-   dim as long fnum
-   dim as UShort tag_length
-   Dim As UShort unitest, mp3frametest
-   Dim As String tagdata
+   Dim As Long skip, offset
+   Dim As LongInt count, maxcheck = 3000
+   Dim As Long fnum
+   Dim As UInteger tag_length
+   Dim As String tagdata, searchSig, sig_str
+   Dim As Long i
+   Dim As Byte b1, b2, b3, b4, textEnc
 
+   ' Tag normalization
    Select Case UCase(searchtag)
         Case "HEADER", "ID3"
-            searchtag = "ID3" & Chr(&h03)
+            searchSig = "ID3" & Chr(&h03)
         Case "TITLE", "TIT2"
-            searchtag = "TIT2"
+            searchSig = "TIT2"
         Case "ARTIST", "TPE1"
-            searchtag = "TPE1"
+            searchSig = "TPE1"
         Case "ALBUM", "TALB"
-            searchtag = "TALB"
+            searchSig = "TALB"
         Case "COMMENT", "COMM"
-            searchtag = "COMM"
+            searchSig = "COMM"
         Case "COPYRIGHT", "TCOP"
-            searchtag = "TCOP"
+            searchSig = "TCOP"
         Case "COMPOSER", "TCOM"
-            searchtag = "TCOM"
-        Case "BEATS PER MINUTE", "BPM", "TPBM"
-            searchtag = "TBPM"
+            searchSig = "TCOM"
+        Case "BEATS PER MINUTE", "BPM", "TBPM"
+            searchSig = "TBPM"
         Case "PUBLISHER", "TPUB"
-            searchtag = "TPUB"
+            searchSig = "TPUB"
         Case "URL", "WXXX"
-            searchtag = "WXXX"
-        Case "PLAY COUNT" "PCNT"
-            searchtag = "PCNT"
+            searchSig = "WXXX"
+        Case "PLAY COUNT", "PCNT"
+            searchSig = "PCNT"
         Case "GENRE", "TCON"
-            searchtag = "TCON"
+            searchSig = "TCON"
         Case "ENCODER", "TENC"
-            searchtag = "TENC"
+            searchSig = "TENC"
         Case "TRACK", "TRACK NUMBER", "TRCK"
-            searchtag = "TRCK"
+            searchSig = "TRCK"
         Case "YEAR", "TYER"
-            searchtag = "TYER"      
-        'Special, in this case we will return the datasize if present, or "-1" if no art
+            searchSig = "TYER"      
         Case "PICTURE", "APIC"
-            searchtag = "APIC"
-            'Not implemented yet!
+            searchSig = "APIC"
         Case Else
-            'Tag may be invalid, but search anyway, there are MANY tags, and we have error checking
+            Return "----"
    End Select
 
    fnum = FreeFile
    Open fn For Binary Access Read As #fnum
    If Lof(fnum) < maxcheck Then maxcheck = Lof(fnum)
-   For count = 0 to maxcheck Step 1
-        Get #fnum, count, sig_to_find
-        If sig_to_find = Cvi(searchtag) Then
-             If searchtag = "ID3" & Chr(&h03) Then
+   
+   For count = 1 To maxcheck - 10 Step 1
+        ' Read 4 bytes for tag ID
+        Get #fnum, count, b1
+        Get #fnum, count + 1, b2
+        Get #fnum, count + 2, b3
+        Get #fnum, count + 3, b4
+        
+        ' Reconstruct as string
+        sig_str = Chr(b1) & Chr(b2) & Chr(b3) & Chr(b4)
+        
+        If sig_str = Left(searchSig, 4) Then
+             If searchSig = "ID3" & Chr(&h03) Then
                 Close #fnum
-                Return "1" 'Because there is no data here, we were just checking for the ID3 header
-             EndIf
-             'test for unicode
-             Get #fnum, count+11, unitest         
-             If unitest = &hFEFF Then 'unicode string
-                skip = 4
-                offset = 13           
-             Else 'not unicode string
-                skip = 0
-                offset = 10            
+                Return "1"
              EndIf
              
-             Get #fnum, count +7, tag_length 'XXXXYYYZZ Where XXXX is the TAG, YYY is flags or something, ZZ is size
-
-             If tag_length-skip < 1 Then
+             ' Read syncsafe size (4 bytes at offset 4)
+             Get #fnum, count + 4, b1
+             Get #fnum, count + 5, b2
+             Get #fnum, count + 6, b3
+             Get #fnum, count + 7, b4
+             
+             tag_length = (CLng(b1) Shl 24) Or (CLng(b2) Shl 16) Or (CLng(b3) Shl 8) Or CLng(b4)
+             
+             ' Decode syncsafe integer
+             tag_length = ((tag_length And &h7F000000) Shr 24) Or _
+                         ((tag_length And &h007F0000) Shr 16) Or _
+                         ((tag_length And &h00007F00) Shr 8) Or _
+                         (tag_length And &h0000007F)
+             
+             If tag_length < 2 Then
                 Close #fnum
-                Return "ERROR" 'In case of bad things
+                Return "ERROR"
              EndIf
              
-             Dim As Byte dataget(1 To tag_length-skip)
-             Get #fnum, count+offset, dataget()
+             ' Frame data starts at count + 10
+             Dim As Byte dataget(1 To tag_length)
+             Get #fnum, count + 10, dataget()
              
-             For i As Integer = 1 To tag_length - skip
-                if dataget(i) < 4 then dataget(i) = 0 ' remove odd characters
-                If dataget(i) <> 0 Then tagdata + = Chr(dataget(i)) 'remove null spaces from ASCII data in UNICODE string
-             Next
+             ' Get encoding byte (byte 1)
+             textEnc = dataget(1)
+             
+             ' Handle different text encodings
+             Select Case textEnc
+                Case 0
+                    ' ISO-8859-1 (single byte)
+                    For i = 2 To tag_length
+                        If dataget(i) = 0 Then Exit For
+                        If dataget(i) >= 32 Then 
+                            tagdata = tagdata & Chr(dataget(i))
+                        EndIf
+                    Next
+                    
+                Case 1
+                    ' UTF-16 with BOM (2 bytes per character)
+                    i = 2
+                    ' Skip BOM if present (bytes -1, -2 = 0xFF, 0xFE in two's complement)
+                    If dataget(2) = 255 And dataget(3) = 254 Then
+                        i = 4
+                    EndIf
+                    
+                    ' Read UTF-16LE (little-endian)
+                    While i < tag_length
+                        If dataget(i) = 0 And dataget(i + 1) = 0 Then Exit While
+                        If dataget(i) >= 32 And dataget(i) <> 0 Then
+                            tagdata = tagdata & Chr(dataget(i))
+                        EndIf
+                        i = i + 2
+                    Wend
+                    
+                Case 2
+                    ' UTF-16BE (big-endian)
+                    For i = 2 To tag_length Step 2
+                        If dataget(i) = 0 And dataget(i + 1) = 0 Then Exit For
+                        If dataget(i + 1) >= 32 Then
+                            tagdata = tagdata & Chr(dataget(i + 1))
+                        EndIf
+                    Next
+                    
+                Case 3
+                    ' UTF-8
+                    For i = 2 To tag_length
+                        If dataget(i) = 0 Then Exit For
+                        If dataget(i) >= 32 Then
+                            tagdata = tagdata & Chr(dataget(i))
+                        EndIf
+                    Next
+             End Select
+             
+             Exit For
         End If
-        If tagdata <> "" then exit For ' stop searching!
    Next
+   
    Close #fnum
    
    If Len(tagdata) = 0 Then
-        'If the tag was just not found or had no data then "----"
         tagdata = "----"
    EndIf
 
@@ -113,8 +170,8 @@ Function getmp3cover(filename As String) As boolean
     dim f       as long
     f = freefile
     ' remove old thumb if present
-    delfile(exepath + "\thumb.jpg")
-    delfile(exepath + "\thumb.png")
+    delfile(exepath + pathchar + "thumb.jpg")
+    delfile(exepath + pathchar + "thumb.png")
     Open filename For Binary Access Read As #f
         If LOF(f) > 0 Then
             buffer = String(LOF(f), 0)
@@ -183,7 +240,7 @@ Function getmp3cover(filename As String) As boolean
         ' attempt to write thumbnail to temp file
         if ext <> "" then
             f = freefile
-            thumb = exepath + "\thumb" + ext
+            thumb = exepath + pathchar + "thumb" + ext
             open thumb for Binary Access Write as #f
                 put #f, , chunk
             close #f
@@ -200,24 +257,27 @@ end function
 
 
 ' get base mp3 info
-dim shared taginfo(1 to 5) as string
+dim shared taginfo(1 to 6) as string
 function getmp3baseinfo(fx1File as string) as boolean
     taginfo(1) = getmp3tag("artist",fx1File)
     taginfo(2) = getmp3tag("title", fx1File)
     taginfo(3) = getmp3tag("album", fx1File)
     taginfo(4) = getmp3tag("year",  fx1File)
     taginfo(5) = getmp3tag("genre", fx1File)
+    ' use last part path as theme
+    ReDim As String ordinance(0)
+    explode(fx1File, "\", ordinance())
+    taginfo(6) = ordinance(UBound(ordinance) -1)
     if taginfo(1) <> "----" and taginfo(2) <> "----" then
         'nop
     else    
-        taginfo(1) = mid(left(fx1File, len(fx1File) - instr(fx1File, "\") -1), InStrRev(fx1File, "\") + 1, len(fx1File))
+        taginfo(1) = mid(left(fx1File, len(fx1File) - instr(fx1File, pathchar) -1), InStrRev(fx1File, pathchar) + 1, len(fx1File))
         taginfo(2) = ""
     end if                
     return true
 end function
 
-/'
-' get http stream info
+/' get http stream info
 function gethttpstreaminfo(fx1Handle as HSTREAM) as boolean
     dim as const zstring ptr meta
     dim as string artist,title
@@ -254,7 +314,6 @@ function getmp3playlist(filename as string, listtype as string) as integer
     dim              as long f
     dim itemnr       as integer = 1
     dim listitem     as string
-    'dim listduration as integer
     dim mp3listtype  as string = ""
     dim temptitle    as string = ""
 
@@ -349,7 +408,6 @@ end function
 function exportm3u(folder as string, filterext as string, listtype as string = "m3u", htmloutput as string = "default", tag as string = "", tagquery as string = "") as integer
     ' setup filelist
     dim                as integer i = 1, j=1, n = 1, attrib, itemnr, maxfiles
-    dim                as long tmp
     dim dummy          as string
     dim dummy2         as string
     dim tbname         as string
@@ -363,15 +421,10 @@ function exportm3u(folder as string, filterext as string, listtype as string = "
 
     redim path(1 to 1) As string
     'export to m3u
-    Open exepath + "\" + tagquery + ".m3u" For output As #20
+    Open exepath + pathchar + tagquery + ".m3u" For output As #20
     print #20, "#EXTM3U"
-    print "exporting result to " & exepath + "\" + tagquery + ".m3u"  & " ..."
+    print "exporting result to " & exepath + pathchar + tagquery + ".m3u"  & " ..."
 
-    #ifdef __FB_LINUX__
-      const pathchar = "/"
-    #else
-      const pathchar = "\"
-    #endif
     ' read dir recursive starting directory
     path(1) = folder 
     if( right(path(1), 1) <> pathchar) then

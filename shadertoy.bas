@@ -3,7 +3,7 @@
 #include once "GL/glext.bi"
 
 ' setup glsdl window
-Dim glglass as SDL_Window ptr
+'Dim glglass as SDL_Window ptr
 dim glfullscreen as boolean = false
 
 ' init hitbox button
@@ -11,8 +11,8 @@ dim boundbox as sdl_rect
 dim offsety  as single = 0.325f
 
 ' setup shadertoy
-dim w2 as integer
-dim h2 as integer
+dim w2 as long
+dim h2 as long
 
 type vec3
   as GLfloat x,y,z
@@ -158,20 +158,16 @@ end function
 initgl:
 ' create a window with an opengl context
 if fullscreen then
+#ifdef __FB_WIN32__
     glglass = SDL_CreateWindow("sdl2 opengl", null, null, screenwidth, screenheight, SDL_WINDOW_OPENGL _
                                 or SDL_WINDOW_BORDERLESS or SDL_WINDOW_SHOWN)
-        ' set vec3 iResolution
-            v3.x = screenwidth
-            v3.y = screenheight
-            v3.z = v3.x/v3.y
+#else
+	glglass = SDL_CreateWindow( "imageviewer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, screenwidth, screenheight, SDL_WINDOW_OPENGL _ 
+								or SDL_WINDOW_BORDERLESS or SDL_WINDOW_FULLSCREEN_DESKTOP)
+#endif								
 else
     glglass = SDL_CreateWindow("sdl2 opengl", 100, 100, screenwidth, screenheight, SDL_WINDOW_OPENGL _
                                 or SDL_WINDOW_BORDERLESS  or SDL_WINDOW_SHOWN)
-        ' set vec3 iResolution
-            v3.x = screenwidth 
-            v3.y = screenheight
-            v3.z = v3.x/v3.y
-
 ' use for setting to specific location
 '    glglass = SDL_CreateWindow("sdl2 opengl", 100, 100, screenwidth * 0.35f, screenheight * 0.35f, SDL_WINDOW_OPENGL _
 '                                or SDL_WINDOW_BORDERLESS or SDL_WINDOW_ALWAYS_ON_TOP or SDL_WINDOW_SHOWN)
@@ -188,8 +184,8 @@ tStart = Timer()
 tLast  = tStart
 
 ' create opengl context bound to sdl
-Dim As SDL_GLContext glContext = SDL_GL_CreateContext(glglass)
-#define glProc(n) n = SDL_GL_GetProcAddress(#n) : if n = 0 then print "shadertoy opengl proc issue"
+glContext = SDL_GL_CreateContext(glglass)
+#define glProc(n) n = SDL_GL_GetProcAddress(#n) : if n = 0 then logentry("error", "shadertoy opengl proc issue")
 ' shader
 glProc(glCreateShader)
 glProc(glDeleteShader)
