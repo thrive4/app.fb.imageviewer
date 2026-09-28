@@ -1,10 +1,10 @@
 ## imageviewer [![Github All Releases](https://img.shields.io/github/downloads/thrive4/app.fb.imageviewer/total.svg)]()
 basic imageviewer and slideshow written in freebasic and sdl2\
 supported image types or extensions:\
- .bmp, .gif, .gls, .jpg, .jpeg, .png, .pcx, .svg, .webp\
+ .bmp, .gif, .gls, .jpg, .jpeg, .png, .pcx, .svg, .webp
 
 Slideshow effects include a pan scan zoom aka the\
-'ken burns' effect plus fade in and crossfade.\
+'ken burns' effect plus fade in and crossfade.
 
 Special support for .mp3 this will extract the\
 cover art from a mp3 and display it if present\
@@ -60,7 +60,7 @@ sdl2:\
 sudo apt install libsdl1.2-dev\
 
 sdl_image and sdl_ttf for sdl 2:\
-sudo apt install libsdl2-image-dev libsdl2-ttf-dev\
+sudo apt install libsdl2-image-dev libsdl2-ttf-dev
 
 verify or check if already installed:
 ldconfig -p | grep SDL2
